@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  packetbeat:
+    image: docker.elastic.co/beats/packetbeat:8.5.0
+    user: root
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    volumes:
+      - ./config/packetbeat.yml:/usr/share/packetbeat/packetbeat.yml
+    depends_on:
+      - kafka
+
+  kafka:
+    image: bitnami/kafka:3.6
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    depends_on:
+      - zookeeper
+
+  zookeeper:
+    image: bitnami/zookeeper:3.9
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes

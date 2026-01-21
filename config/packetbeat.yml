@@ -1,0 +1,20 @@
+packetbeat.interfaces.device: any
+
+packetbeat.flows:
+  timeout: 30s
+  period: 10s
+
+packetbeat.protocols:
+  - type: dns
+    ports: [53]
+  - type: http
+    ports: [80, 8080, 8000, 443]
+
+output.kafka:
+  hosts: ["kafka:9092"]
+  topic: "network-events"
+  codec.json:
+    pretty: true
+    escape_html: false
+
+logging.level: info
