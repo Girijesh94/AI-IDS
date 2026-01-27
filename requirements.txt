@@ -25,3 +25,5 @@ streamlit
 Flask-SocketIO
 python-socketio
 websocket-client
+imbalanced-learn
+scikit-learn-extra

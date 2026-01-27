@@ -18,7 +18,7 @@ def main():
     print("="*60)
 
     # --- 1. Load Processed Data ---
-    processed_data_path = Path('../data/processed/processed_cicids2017.parquet')
+    processed_data_path = Path('data/processed/processed_cicids2017.parquet')
     if not processed_data_path.exists():
         print(f"Error: Processed data not found at {processed_data_path}")
         print("Please run the main_preprocessor.py script first.")

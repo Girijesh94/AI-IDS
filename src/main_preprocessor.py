@@ -21,9 +21,9 @@ def main():
 
     # Define paths
     # TODO: Update this path to where your CICIDS-2017 data is located
-    network_data_path = Path('../data/cicids-2017/MachineLearningCVE/')
-    system_data_path = Path('../data/system_logs/') # Placeholder
-    output_path = Path('../data/processed/')
+    network_data_path = Path('data/cicids-2017/')
+    system_data_path = Path('data/UNSW-NB15_c/') # Using UNSW-NB15 for system features
+    output_path = Path('data/processed/')
     output_path.mkdir(exist_ok=True)
 
     # --- 1. Log Parsing ---
