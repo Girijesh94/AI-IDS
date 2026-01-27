@@ -1,2 +1,6 @@
 # Data artifacts
 /data/
+
+# Virtual environments
+venv/
+.venv/
