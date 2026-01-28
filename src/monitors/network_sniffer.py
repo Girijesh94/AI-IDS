@@ -1,119 +1,119 @@
 #!/usr/bin/env python3
 """
-Real-time Network Sniffer for Hybrid AI-IDS
+Network Sniffer for Hybrid AI-IDS
+Captures network packets and extracts features for real intrusion detection
 """
 
-import pyshark
-import pyshark
-import aiohttp
 import socketio
+import requests
 import time
-import asyncio
-import sys
+import uuid
+from scapy.all import sniff, IP, TCP, UDP
+from feature_extractor import FlowFeatureExtractor
 
-API_URL = 'http://127.0.0.1:5000/predict'
-SIO_URL = 'http://127.0.0.1:5000'
+# Configuration
+API_URL = "http://127.0.0.1:5000/predict"
+SIO_URL = "http://127.0.0.1:5000"
+INTERFACE = None  # Let scapy auto-detect the best interface
 
-# --- Async Socket.IO Client ---
-sio = socketio.AsyncClient()
+# Initialize components
+sio = socketio.Client()
+feature_extractor = FlowFeatureExtractor()
 
-@sio.event
-async def connect():
-    print('Connected to server')
-
-@sio.event
-async def disconnect():
-    print('Disconnected from server')
-
-def packet_to_features(packet):
-    """Converts a pyshark packet to a feature dictionary and a summary."""
+def process_packet(packet):
+    """Process a packet and send for analysis"""
     try:
-        # Simplified feature extraction for prediction
-        features = {
-            'dst_port': int(packet.tcp.dstport),
-            'protocol': 6, # TCP
-            # Add other features required by the model
-        }
+        print(f"[DEBUG] Packet captured: {len(packet)} bytes")
+        
+        # Extract features
+        features = feature_extractor.extract_features(packet)
+        
+        if features:
+            print(f"[DEBUG] Features extracted successfully")
 
-        # Summarized data for dashboard display
-        summary = {
-            'timestamp': packet.sniff_time.isoformat(),
-            'src': packet.ip.src,
-            'dst': packet.ip.dst,
-            'protocol': packet.transport_layer,
-            'length': int(packet.length),
-        }
-        return features, summary
-    except AttributeError:
-        return None, None
+            packet_id = uuid.uuid4().hex
+            src_ip = packet[IP].src if IP in packet else None
+            dst_ip = packet[IP].dst if IP in packet else None
 
-async def async_sniffer(main_loop, session):
-    """This function runs in a separate thread with its own event loop."""
-    # Set the event loop policy for this new thread
-    if sys.platform == 'win32':
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    
-    # pyshark will now find this loop when it's initialized
-    capture = pyshark.LiveCapture(interface='Ethernet')
-    try:
-        for packet in capture.sniff_continuously():
-            features, summary = packet_to_features(packet)
-            if summary:
-                # Schedule the async emit on the main event loop
-                asyncio.run_coroutine_threadsafe(sio.emit('stream_packet', summary), main_loop)
-            if features:
-                # Schedule the async post on the main event loop
-                # Note: We can't pass the aiohttp session object directly.
-                # Instead, we'll pass the URL and let the main loop handle the request.
-                # For simplicity, we'll just print for now.
-                print(f"Captured features for prediction: {features}")
-                # In a real scenario, you'd set up a queue or another thread-safe communication.
+            # Best-effort destination port extraction (matches model feature name)
+            destination_port = None
+            if TCP in packet:
+                destination_port = int(packet[TCP].dport)
+            elif UDP in packet:
+                destination_port = int(packet[UDP].dport)
+
+            # Attach correlation fields to features for the API
+            features['packet_id'] = packet_id
+            if src_ip is not None:
+                features['src'] = src_ip
+            if dst_ip is not None:
+                features['dst'] = dst_ip
+            if destination_port is not None:
+                features['destination_port'] = destination_port
+            
+            # Create summary for dashboard
+            summary = {
+                'packet_id': packet_id,
+                'timestamp': time.time(),
+                'src': src_ip if src_ip is not None else 'Unknown',
+                'dst': dst_ip if dst_ip is not None else 'Unknown',
+                'protocol': 'TCP' if TCP in packet else 'UDP' if UDP in packet else 'Other',
+                'length': len(packet),
+                'destination_port': destination_port,
+            }
+            
+            print(f"[DEBUG] Sending to dashboard: {summary['src']} -> {summary['dst']}")
+            
+            # Send to dashboard
+            sio.emit('stream_packet', summary)
+            
+            # Send to API for prediction
+            try:
+                response = requests.post(API_URL, json=features, timeout=1)
+                if response.status_code == 200:
+                    result = response.json()
+                    print(f"[DEBUG] API response: {result}")
+                    if result.get('prediction') != 0:  # If not benign
+                        print(f"⚠️  Threat detected: {result}")
+                else:
+                    print(f"[DEBUG] API error: {response.status_code}")
+            except requests.exceptions.RequestException as e:
+                print(f"[DEBUG] API connection error: {e}")
+        else:
+            print(f"[DEBUG] No features extracted")
+        
+        # Cleanup old flows periodically
+        feature_extractor.cleanup_old_flows()
+        
     except Exception as e:
-        print(f"An error occurred in the sniffer thread: {e}")
+        print(f"Error processing packet: {e}")
+        import traceback
+        traceback.print_exc()
 
-def run_sniffer_in_thread(main_loop):
-    """Starts the new event loop and runs the sniffer coroutine in it."""
-    # Manually create and set the event loop for this thread
-    if sys.platform == 'win32':
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+def main():
+    """Start packet capture"""
+    print(f"Starting Hybrid AI-IDS Network Sniffer on interface: {INTERFACE}")
+    print("Press Ctrl+C to stop...")
     
     try:
-        loop.run_until_complete(async_sniffer(main_loop, None))
-    finally:
-        loop.close()
-
-async def main():
-    """Sets up the async environment and runs the sniffer in a separate thread."""
-    print("Starting real-time network sniffer...")
-    main_loop = asyncio.get_running_loop()
-
-    try:
-        await sio.connect(SIO_URL)
+        # Connect to WebSocket server
+        sio.connect(SIO_URL)
+        print("✓ Connected to WebSocket server")
+        
+        # Start packet capture
+        sniff(iface=INTERFACE, prn=process_packet, store=0)
+        
     except socketio.exceptions.ConnectionError as e:
-        print(f"Could not connect to WebSocket server: {e}")
-        return
-
-    # Start the sniffer in its own thread with its own event loop
-    import threading
-    sniffer_thread = threading.Thread(target=run_sniffer_in_thread, args=(main_loop,))
-    sniffer_thread.start()
-
-    try:
-        # Keep the main loop running to handle WebSocket events
-        while sniffer_thread.is_alive():
-            await asyncio.sleep(1)
+        print(f"✗ Could not connect to WebSocket server: {e}")
+        print("Make sure the API server is running on http://127.0.0.1:5000")
     except KeyboardInterrupt:
         print("\nStopping sniffer...")
+    except PermissionError:
+        print("✗ Permission denied. Try running with administrator privileges.")
+    except Exception as e:
+        print(f"✗ Error: {e}")
     finally:
-        if sio.connected:
-            await sio.disconnect()
-        # Note: The sniffer thread will be stopped abruptly on exit.
-        # A graceful shutdown would require a more complex signaling mechanism.
+        sio.disconnect()
 
-if __name__ == '__main__':
-    if sys.platform == 'win32':
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    asyncio.run(main())
+if __name__ == "__main__":
+    main()

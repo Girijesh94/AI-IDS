@@ -39,7 +39,7 @@ def main():
     print(f"  - Testing set shape: {X_test.shape}")
 
     # --- 3. Train Models ---
-    models_path = Path('../models/')
+    models_path = Path('models/')
     models_path.mkdir(exist_ok=True)
 
     # --- Random Forest ---
