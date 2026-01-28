@@ -8,13 +8,19 @@ import socketio
 import requests
 import time
 import uuid
-from scapy.all import sniff, IP, TCP, UDP
+from scapy.all import sniff, IP, TCP, UDP, DNS, DNSQR, conf
 from feature_extractor import FlowFeatureExtractor
 
 # Configuration
 API_URL = "http://127.0.0.1:5000/predict"
 SIO_URL = "http://127.0.0.1:5000"
-INTERFACE = None  # Let scapy auto-detect the best interface
+INTERFACE = "\\Device\\NPF_Loopback"  # Explicitly use loopback for localhost traffic
+INTERFACES = [INTERFACE]
+try:
+    if conf.iface and conf.iface not in INTERFACES:
+        INTERFACES.append(conf.iface)
+except Exception:
+    pass
 
 # Initialize components
 sio = socketio.Client()
@@ -24,6 +30,27 @@ def process_packet(packet):
     """Process a packet and send for analysis"""
     try:
         print(f"[DEBUG] Packet captured: {len(packet)} bytes")
+
+        if UDP in packet:
+            try:
+                print(f"[DEBUG] UDP ports sport={int(packet[UDP].sport)} dport={int(packet[UDP].dport)}")
+            except Exception:
+                pass
+
+        if UDP in packet and int(packet[UDP].dport) == 53:
+            if DNS in packet and DNSQR in packet:
+                qname = packet[DNSQR].qname.decode('utf-8', errors='ignore')
+                print(f"[DEBUG] DNS query captured qname={qname[:120]}")
+            else:
+                try:
+                    parsed = DNS(bytes(packet[UDP].payload))
+                    if parsed is not None and getattr(parsed, 'qd', None) is not None and getattr(parsed.qd, 'qname', None) is not None:
+                        qname = parsed.qd.qname.decode('utf-8', errors='ignore')
+                        print(f"[DEBUG] UDP/53 decoded via fallback qname={qname[:120]}")
+                    else:
+                        print("[DEBUG] UDP/53 captured but DNS layer not decoded")
+                except Exception:
+                    print("[DEBUG] UDP/53 captured but DNS layer not decoded")
         
         # Extract features
         features = feature_extractor.extract_features(packet)
@@ -50,6 +77,16 @@ def process_packet(packet):
                 features['dst'] = dst_ip
             if destination_port is not None:
                 features['destination_port'] = destination_port
+
+            if 'dns_query_length' in features or destination_port == 53:
+                print(
+                    "[DEBUG] DNS features summary: "
+                    f"destination_port={features.get('destination_port')} "
+                    f"dns_query_length={features.get('dns_query_length')} "
+                    f"domain_entropy={features.get('domain_entropy')} "
+                    f"is_dns_tunneling={features.get('is_dns_tunneling')} "
+                    f"dns_conf={features.get('dns_tunneling_confidence')}"
+                )
             
             # Create summary for dashboard
             summary = {
@@ -69,6 +106,13 @@ def process_packet(packet):
             
             # Send to API for prediction
             try:
+                if features.get('is_dns_tunneling'):
+                    print(
+                        "[DEBUG] DNS tunneling features before API: "
+                        f"is_dns_tunneling={features.get('is_dns_tunneling')} "
+                        f"dns_score={features.get('dns_tunneling_score')} "
+                        f"dns_conf={features.get('dns_tunneling_confidence')}"
+                    )
                 response = requests.post(API_URL, json=features, timeout=1)
                 if response.status_code == 200:
                     result = response.json()
@@ -92,7 +136,7 @@ def process_packet(packet):
 
 def main():
     """Start packet capture"""
-    print(f"Starting Hybrid AI-IDS Network Sniffer on interface: {INTERFACE}")
+    print(f"Starting Hybrid AI-IDS Network Sniffer on interface(s): {INTERFACES}")
     print("Press Ctrl+C to stop...")
     
     try:
@@ -101,7 +145,7 @@ def main():
         print("✓ Connected to WebSocket server")
         
         # Start packet capture
-        sniff(iface=INTERFACE, prn=process_packet, store=0)
+        sniff(iface=INTERFACES, prn=process_packet, store=0)
         
     except socketio.exceptions.ConnectionError as e:
         print(f"✗ Could not connect to WebSocket server: {e}")

@@ -5,13 +5,16 @@ Feature Extractor for Hybrid AI-IDS
 
 import time
 import numpy as np
+import time
 from collections import defaultdict
 from scapy.all import IP, TCP, UDP
+from dns_analyzer import DNSAnalyzer
 
 class FlowFeatureExtractor:
     def __init__(self, flow_timeout=60):
         self.flows = defaultdict(dict)
         self.flow_timeout = flow_timeout
+        self.dns_analyzer = DNSAnalyzer()
         
     def _get_flow_key(self, packet):
         """Generate bidirectional flow key"""
@@ -102,16 +105,32 @@ class FlowFeatureExtractor:
         # Basic features
         features = {}
         features['destination_port'] = flow_key[3] if flow_key[2] < flow_key[3] else flow_key[2]
+        
+        # Calculate all features
+        features = {}
+        
+        # Basic flow features (existing)
         flow_duration = current_time - flow['start_time']
         features['flow_duration'] = flow_duration
-        
-        # Packet counts
         features['total_fwd_packets'] = len(flow['fwd_packets'])
-        features['total_backward_packets'] = len(flow['bwd_packets'])
-        
-        # Byte counts
+        features['total_bwd_packets'] = len(flow['bwd_packets'])
         features['total_length_of_fwd_packets'] = flow['fwd_bytes']
         features['total_length_of_bwd_packets'] = flow['bwd_bytes']
+        
+        # DNS-specific features (NEW)
+        dns_features = self.dns_analyzer.extract_dns_features(packet)
+        features.update(dns_features)
+        
+        # DNS tunneling detection (NEW)
+        if dns_features:
+            tunneling_result = self.dns_analyzer.is_dns_tunneling(dns_features)
+            features['dns_tunneling_score'] = tunneling_result['score']
+            features['dns_tunneling_confidence'] = tunneling_result['confidence']
+            features['is_dns_tunneling'] = tunneling_result['is_tunneling']
+        else:
+            features['dns_tunneling_score'] = 0
+            features['dns_tunneling_confidence'] = 0
+            features['is_dns_tunneling'] = False
         
         # Packet length statistics
         fwd_lengths = [packet_len for packet_len in flow['packet_lengths'] if flow['fwd_packets']] if flow['fwd_packets'] else [0]
@@ -131,7 +150,7 @@ class FlowFeatureExtractor:
         # Flow rates
         if flow_duration > 0:
             features['flow_bytes/s'] = (flow['fwd_bytes'] + flow['bwd_bytes']) / flow_duration
-            features['flow_packets/s'] = (features['total_fwd_packets'] + features['total_backward_packets']) / flow_duration
+            features['flow_packets/s'] = (features['total_fwd_packets'] + features['total_bwd_packets']) / flow_duration
         else:
             features['flow_bytes/s'] = 0
             features['flow_packets/s'] = 0
@@ -175,12 +194,12 @@ class FlowFeatureExtractor:
         
         # Header lengths (approximate)
         features['fwd_header_length'] = features['total_fwd_packets'] * 40  # IP+TCP
-        features['bwd_header_length'] = features['total_backward_packets'] * 40
+        features['bwd_header_length'] = features['total_bwd_packets'] * 40
         
         # Packet rates
         if flow_duration > 0:
             features['fwd_packets/s'] = features['total_fwd_packets'] / flow_duration
-            features['bwd_packets/s'] = features['total_backward_packets'] / flow_duration
+            features['bwd_packets/s'] = features['total_bwd_packets'] / flow_duration
         else:
             features['fwd_packets/s'] = features['bwd_packets/s'] = 0
         
@@ -207,10 +226,10 @@ class FlowFeatureExtractor:
         else:
             features['down/up_ratio'] = 0
             
-        total_packets = features['total_fwd_packets'] + features['total_backward_packets']
+        total_packets = features['total_fwd_packets'] + features['total_bwd_packets']
         features['average_packet_size'] = (flow['fwd_bytes'] + flow['bwd_bytes']) / total_packets if total_packets > 0 else 0
         features['avg_fwd_segment_size'] = features['total_length_of_fwd_packets'] / features['total_fwd_packets'] if features['total_fwd_packets'] > 0 else 0
-        features['avg_bwd_segment_size'] = features['total_length_of_bwd_packets'] / features['total_backward_packets'] if features['total_backward_packets'] > 0 else 0
+        features['avg_bwd_segment_size'] = features['total_length_of_bwd_packets'] / features['total_bwd_packets'] if features['total_bwd_packets'] > 0 else 0
         
         # Additional features (set to 0 for simplicity)
         for f in ['fwd_header_length.1', 'fwd_avg_bytes/bulk', 'fwd_avg_packets/bulk', 'fwd_avg_bulk_rate',

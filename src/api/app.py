@@ -15,6 +15,8 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+API_VERSION = "dns-heuristics-v1"
+
 # --- Load Model ---
 MODEL_PATH = Path('models/random_forest_model.joblib')
 model = None
@@ -86,6 +88,7 @@ def predict():
 
         # Simple heuristic: many distinct destination ports in short time => suspicious
         suspicious_by_rule = False
+        unique_ports = 0
         if src_ip is not None and dst_port is not None:
             now = time.time()
             q = recent_ports_by_src[src_ip]
@@ -94,22 +97,36 @@ def predict():
             while q and (now - q[0][0]) > window_s:
                 q.popleft()
             unique_ports = len({p for _, p in q})
-            if unique_ports >= 10:
+            if unique_ports >= 30:  # Increased threshold from 10 to 30
                 suspicious_by_rule = True
 
         # Determine severity from model output + heuristics
         confidence = float(result['confidence'])
         pred = int(result['prediction'])
-        if pred != 0 and confidence >= 0.6:
-            status = 'malicious'
-        elif pred != 0 and confidence < 0.6:
-            status = 'suspicious'
+        features = data
+        # DNS Tunneling Detection
+        is_dns_tunneling = bool(features.get('is_dns_tunneling', False))
+        dns_tunneling_confidence = float(features.get('dns_tunneling_confidence', 0) or 0)
+        dns_tunneling_score = float(features.get('dns_tunneling_score', 0) or 0)
+        pred_out = pred
+        
+        # Determine status
+        if pred != 0:
+            status = "malicious"
+            severity = "high"
+        elif is_dns_tunneling and dns_tunneling_confidence >= 0.7:
+            status = "malicious"
+            severity = "high"
+            pred_out = 6  # Custom DNS tunneling class
         elif suspicious_by_rule:
-            status = 'suspicious'
-        elif pred == 0 and confidence < 0.6:
-            status = 'suspicious'
+            status = "suspicious"
+            severity = "medium"
+        elif is_dns_tunneling and dns_tunneling_confidence >= 0.3:
+            status = "suspicious"
+            severity = "medium"
         else:
-            status = 'normal'
+            status = "normal"
+            severity = "low"
 
         # Emit classification event (always)
         socketio.emit('classification', {
@@ -117,17 +134,28 @@ def predict():
             'src': src_ip,
             'dst': dst_ip,
             'destination_port': dst_port,
-            'prediction': pred,
+            'prediction': pred_out,
             'confidence': confidence,
             'status': status,
             'rule_portscan': suspicious_by_rule,
+            'unique_ports_10s': unique_ports,
+            'dns_tunneling': is_dns_tunneling,
+            'dns_tunneling_score': dns_tunneling_score,
+            'dns_tunneling_confidence': dns_tunneling_confidence,
+            'api_version': API_VERSION,
         })
+
+        print(
+            f"[DECISION] status={status} pred_out={pred_out} conf={confidence:.3f} "
+            f"port={dst_port} portscan={suspicious_by_rule} unique_ports_10s={unique_ports} "
+            f"dns_tunneling={is_dns_tunneling} dns_conf={dns_tunneling_confidence:.3f} dns_score={dns_tunneling_score}"
+        )
 
         # Emit system log for prediction
         socketio.emit('system_log', {
             'timestamp': datetime.datetime.now().isoformat(),
             'level': 'INFO',
-            'message': f"Prediction processed for port {dst_port if dst_port is not None else 'unknown'} - Result: {pred} ({status})"
+            'message': f"Prediction processed for port {dst_port if dst_port is not None else 'unknown'} - Result: {pred_out} ({status})"
         })
 
         # If suspicious or malicious is detected, emit an alert to the dashboard
@@ -139,6 +167,12 @@ def predict():
                 'id': alert_count,
                 'status': status,
                 'destination_port': dst_port,
+                'prediction': pred_out,
+                'rule_portscan': suspicious_by_rule,
+                'unique_ports_10s': unique_ports,
+                'dns_tunneling': is_dns_tunneling,
+                'dns_tunneling_score': dns_tunneling_score,
+                'dns_tunneling_confidence': dns_tunneling_confidence,
             }
             alert_store.append(alert_data)
             socketio.emit('new_alert', alert_data)
@@ -150,7 +184,17 @@ def predict():
                 'message': f"Threat detected ({status}) from {src_ip if src_ip is not None else 'unknown'} to port {dst_port if dst_port is not None else 'unknown'}"
             })
 
-        return jsonify(result)
+        return jsonify({
+            **result,
+            'prediction': pred_out,
+            'status': status,
+            'rule_portscan': suspicious_by_rule,
+            'unique_ports_10s': unique_ports,
+            'dns_tunneling': is_dns_tunneling,
+            'dns_tunneling_score': dns_tunneling_score,
+            'dns_tunneling_confidence': dns_tunneling_confidence,
+            'api_version': API_VERSION,
+        })
 
     except Exception as e:
         # For debugging, print the actual error
