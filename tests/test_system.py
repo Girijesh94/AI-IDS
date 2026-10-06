@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from scapy.all import IP, IPv6, TCP, UDP, Ether, wrpcap
+from scapy.all import IP, IPv6, TCP, UDP, ICMP, Ether, Dot1Q, Raw, wrpcap
 from backend.features import FlowExtractor, read_pcap
 from backend.schemas import validate_flow
 from backend.config import Settings
@@ -55,6 +55,16 @@ class ExtractionTests(unittest.TestCase):
         f.add(packet(t=999))
         self.assertEqual(f.dropped,1); self.assertEqual(f.out_of_order,1)
 
+    def test_repeated_reset_timestamp_has_unique_reproducible_ids(self):
+        rows=[]
+        for _ in range(2):
+            extractor=FlowExtractor('fixture')
+            p=packet(); p[TCP].flags='R'
+            emitted=extractor.add(p)+extractor.add(p)
+            self.assertNotEqual(emitted[0]['event_id'],emitted[1]['event_id'])
+            rows.append(emitted)
+        self.assertEqual(rows[0],rows[1])
+
     def test_parser_parity(self):
         packets=[packet(),packet(t=1001,reverse=True),packet(t=1006,port=81)]
         f=FlowExtractor('fixture'); expected=[]
@@ -63,6 +73,25 @@ class ExtractionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'fixture.pcap'; wrpcap(str(path),packets)
             self.assertEqual(list(read_pcap(path,'fixture')),expected)
+
+    def test_fast_decoder_matches_reference_for_formats_and_timing(self):
+        from scapy.utils import PcapWriter, PcapNgWriter
+        packets = [packet(t=1000.123456), packet(t=1000.223456, reverse=True),
+                   packet(t=1005.333333, ipv6=True),
+                   Ether()/Dot1Q(vlan=7)/IP(src='192.0.2.3',dst='192.0.2.4')/UDP(sport=3,dport=4)/Raw(b'payload'),
+                   Ether()/IP(src='192.0.2.5',dst='192.0.2.6')/ICMP(),
+                   Ether()/IP(src='192.0.2.5',dst='192.0.2.6',flags='MF')/UDP(),
+                   packet(t=1020.123456,port=90)]
+        for i in [3,4,5]: packets[i].time=1006+i*.1
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, writer_type, options in [('micro',PcapWriter,{}),('nano',PcapWriter,{'nano':True}),('ng',PcapNgWriter,{})]:
+                path=Path(tmp)/name
+                with writer_type(str(path),**options) as writer:
+                    for p in packets: writer.write(p)
+                fast_stats, reference_stats = {}, {}
+                self.assertEqual(list(read_pcap(path,'fixture',fast_stats)),
+                                 list(read_pcap(path,'fixture',reference_stats,fast=False)))
+                self.assertEqual(fast_stats,reference_stats)
 
     def test_schema_rejects_invalid_counts_nan_and_missing(self):
         for change in [{'pkt_count':99},{'duration':float('nan')},{'mean_pkt_size':1},{'src_ip':'<script>'}]:

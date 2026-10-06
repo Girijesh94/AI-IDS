@@ -1,5 +1,8 @@
 """Join canonical windows to verified CIC flow labels without feeding labels to extraction."""
 import argparse
+from concurrent.futures import ProcessPoolExecutor
+import os
+import shutil
 from bisect import bisect_right
 from collections import defaultdict
 import csv
@@ -66,52 +69,124 @@ class LabelIndex:
         return dict(label=0 if label == 'BENIGN' else 1, family=label, label_source='verified_benchmark'), 'matched'
 
 
-def prepare(raw, output):
-    manifest = json.loads((raw/'download-manifest.json').read_text())
-    required = [x['path'] for x in manifest['files'] if x['path'].startswith(('pcap/','traffic_labels/'))]
-    if any(manifest['status'].get(x,{}).get('state') != 'verified' for x in required):
-        raise ValueError('Full capture and label downloads must be verified before training extraction')
-    output.mkdir(parents=True,exist_ok=False)
-    report = dict(source_manifest_sha256=sha(raw/'download-manifest.json'), mirror_revision=manifest['revision'],
-                  label_precision='inferred per file; minute-truncated labels use <=60 second uncertainty', files=[], status='extracting')
+DAYS = [('train', 'Monday'), ('train', 'Tuesday'), ('train', 'Wednesday'),
+        ('validation', 'Thursday'), ('test', 'Friday')]
+PREPARATION_VERSION = 'canonical-resumable-v3'
+
+
+def prepare_day(raw, output, day, modulus, manifest):
+    """Commit a day atomically. A restart reuses only checksum-verified results."""
+    folder = output / 'days' / day
+    report_path = folder / 'report.json'
+    pcap = next((raw / 'pcap').glob(day + '*.pcap'))
+    capture_hash = manifest['status']['pcap/' + pcap.name]['sha256']
+    expected = dict(version=PREPARATION_VERSION, capture_sha256=capture_hash,
+                    session_sample_modulus=modulus,
+                    source_manifest_sha256=sha(raw / 'download-manifest.json'),
+                    extractor_sha256=sha(Path(__file__).parents[1] / 'backend/features.py'))
+    if report_path.exists():
+        saved = json.loads(report_path.read_text())
+        if (all(saved.get(k) == v for k, v in expected.items()) and
+                saved['data_sha256'] == sha(folder / 'observations.jsonl') and
+                saved['labels_sha256'] == sha(folder / 'labels.csv')):
+            print(day, 'reusing verified checkpoint', flush=True)
+            return saved
+        raise ValueError(f'{day}: incompatible or altered checkpoint; use a new output directory')
+    label_paths = sorted((raw / 'traffic_labels').glob(day + '*.parquet'))
+    if sha(pcap) != capture_hash:
+        raise ValueError(f'{day}: capture checksum no longer matches download manifest')
+    for path in label_paths:
+        if sha(path) != manifest['status']['traffic_labels/' + path.name]['sha256']:
+            raise ValueError(f'{day}: label checksum mismatch')
+    index = LabelIndex(label_paths)
+    folder.mkdir(parents=True, exist_ok=True)
+    counts, extraction_stats = defaultdict(int), {}
+    started = time.monotonic()
+    data_part, labels_part = folder / 'observations.partial', folder / 'labels.partial'
+    with data_part.open('w', encoding='utf-8') as observations, labels_part.open('w', newline='', encoding='utf-8') as labels_out:
+        writer = csv.DictWriter(labels_out, fieldnames=['event_id', 'label', 'family', 'label_source'])
+        writer.writeheader()
+        for flow in read_pcap(pcap, 'pcap:' + capture_hash[:16], extraction_stats):
+            counts['windows'] += 1
+            label, reason = index.match(flow)
+            counts[reason] += 1
+            # Same deterministic complete-session sampling used by the trainer,
+            # moved before writing to bound disk and RAM; labels never select rows.
+            bucket = int(hashlib.sha256(flow['session_id'].encode()).hexdigest()[:8], 16)
+            if bucket % modulus == 0 and label:
+                observations.write(json.dumps(flow, allow_nan=False) + '\n')
+                writer.writerow(dict(event_id=flow['event_id'], **label))
+                counts['written'] += 1
+            if counts['windows'] % 100000 == 0:
+                progress = dict(day=day, counts=dict(counts), elapsed_seconds=time.monotonic()-started)
+                (folder / 'progress.json').write_text(json.dumps(progress))
+                print(day, dict(counts), flush=True)
+    if extraction_stats['capacity_drops']:
+        raise ValueError(f'{day}: extractor capacity drops; do not train')
+    if counts.get('matched', 0) / max(1, counts['windows']) < .8:
+        raise ValueError(f'{day}: label alignment below 80%; do not train')
+    data_part.replace(folder / 'observations.jsonl')
+    labels_part.replace(folder / 'labels.csv')
+    report = dict(expected, file=pcap.name, counts=dict(counts), extraction=extraction_stats,
+                  label_tolerance_seconds=index.tolerance, seconds=time.monotonic()-started,
+                  data_sha256=sha(folder / 'observations.jsonl'), labels_sha256=sha(folder / 'labels.csv'))
+    pending = folder / 'report.tmp'
+    pending.write_text(json.dumps(report, indent=2))
+    pending.replace(report_path)
+    return report
+
+
+def prepare(raw, output, workers=3, session_sample_modulus=10):
+    raw, output = Path(raw), Path(output)
+    if session_sample_modulus < 1 or workers < 1:
+        raise ValueError('Workers and session sample modulus must be positive')
+    manifest = json.loads((raw / 'download-manifest.json').read_text())
+    required = [x['path'] for x in manifest['files'] if x['path'].startswith(('pcap/', 'traffic_labels/'))]
+    if any(manifest['status'].get(x, {}).get('state') != 'verified' for x in required):
+        raise ValueError('Full capture and label downloads must be verified before extraction')
+    output.mkdir(parents=True, exist_ok=True)
+    report = dict(source_manifest_sha256=sha(raw / 'download-manifest.json'), mirror_revision=manifest['revision'],
+                  preparation_version=PREPARATION_VERSION, session_sample_modulus=session_sample_modulus,
+                  label_precision='inferred per file; minute-truncated labels use <=60 second uncertainty',
+                  files=[], status='extracting')
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(prepare_day, raw, output, day, session_sample_modulus, manifest) for _, day in DAYS]
+        for (split, day), future in zip(DAYS, futures):
+            entry = dict(future.result(), split=split)
+            report['files'].append(entry)
+            (output / 'extraction-report.json').write_text(json.dumps(report, indent=2))
     seen_vectors = set()
-    for split, days in [('train',['Monday','Tuesday','Wednesday']),('validation',['Thursday']),('test',['Friday'])]:
-        with (output/f'{split}.jsonl').open('w',encoding='utf-8') as observations, (output/f'{split}-labels.csv').open('w',newline='',encoding='utf-8') as labels_out:
-            writer=csv.DictWriter(labels_out,fieldnames=['event_id','label','family','label_source']); writer.writeheader()
-            current_vectors=set()
-            for day in days:
-                pcap=next((raw/'pcap').glob(day+'*.pcap'))
-                label_paths=list((raw/'traffic_labels').glob(day+'*.parquet'))
-                index=LabelIndex(label_paths)
-                counts=defaultdict(int)
-                extraction_stats={}
-                started=time.monotonic()
-                capture_hash=manifest['status']['pcap/'+pcap.name]['sha256']
-                for flow in read_pcap(pcap,'pcap:'+capture_hash[:16],extraction_stats):
-                    counts['windows']+=1
-                    label,reason=index.match(flow); counts[reason]+=1
-                    if label:
-                        vector=hashlib.sha256(json.dumps([flow[k] for k in FEATURES]).encode()).digest()
+    for split in ['train', 'validation', 'test']:
+        current_vectors = set()
+        removed = 0
+        with (output / f'{split}.jsonl.partial').open('w', encoding='utf-8') as observations, (output / f'{split}-labels.csv.partial').open('w', newline='', encoding='utf-8') as labels_out:
+            writer = csv.DictWriter(labels_out, fieldnames=['event_id', 'label', 'family', 'label_source'])
+            writer.writeheader()
+            for day_split, day in DAYS:
+                if day_split != split:
+                    continue
+                folder = output / 'days' / day
+                with (folder / 'observations.jsonl').open(encoding='utf-8') as source, (folder / 'labels.csv').open(newline='', encoding='utf-8') as label_source:
+                    reader = csv.DictReader(label_source)
+                    for line, label in zip(source, reader, strict=True):
+                        flow = json.loads(line)
+                        if flow['event_id'] != label['event_id']:
+                            raise ValueError('Checkpoint observation/label order mismatch')
+                        vector = hashlib.sha256(json.dumps([flow[k] for k in FEATURES]).encode()).digest()
                         if vector in seen_vectors:
-                            counts['cross_split_duplicate']+=1
+                            removed += 1
                             continue
                         current_vectors.add(vector)
-                        observations.write(json.dumps(flow,allow_nan=False)+'\n')
-                        writer.writerow(dict(event_id=flow['event_id'],**label))
-                        counts['written']+=1
-                    if counts['windows']%100000 == 0:
-                        print(day,dict(counts),flush=True)
-                report['files'].append(dict(file=pcap.name,split=split,counts=dict(counts),extraction=extraction_stats,label_tolerance_seconds=index.tolerance,seconds=time.monotonic()-started))
-                (output/'extraction-report.json').write_text(json.dumps(report,indent=2))
-            seen_vectors.update(current_vectors)
-    report['status']='complete'
-    (output/'extraction-report.json').write_text(json.dumps(report,indent=2))
-    for entry in report['files']:
-        counts=entry['counts']
-        if entry['extraction']['capacity_drops']:
-            raise ValueError('Extractor capacity drops detected; adjust bounds and re-extract before training')
-        if counts.get('matched',0)/max(1,counts['windows']) < .8:
-            raise ValueError('Label alignment below 80%; inspect extraction-report.json before training')
+                        observations.write(line)
+                        writer.writerow(label)
+        seen_vectors.update(current_vectors)
+        (output / f'{split}.jsonl.partial').replace(output / f'{split}.jsonl')
+        (output / f'{split}-labels.csv.partial').replace(output / f'{split}-labels.csv')
+        report.setdefault('cross_split_duplicates_removed', {})[split] = removed
+    report['status'] = 'complete'
+    pending = output / 'extraction-report.tmp'
+    pending.write_text(json.dumps(report, indent=2))
+    pending.replace(output / 'extraction-report.json')
     return output
 
 
@@ -119,4 +194,6 @@ if __name__ == '__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--raw',type=Path,default=Path('data/raw/cicids2017'))
     p.add_argument('--output',type=Path,required=True)
-    a=p.parse_args(); prepare(a.raw,a.output)
+    p.add_argument('--workers',type=int,default=3)
+    p.add_argument('--session-sample-modulus',type=int,default=10)
+    a=p.parse_args(); prepare(a.raw,a.output,a.workers,a.session_sample_modulus)

@@ -4,6 +4,7 @@ import json
 import sqlite3
 import time
 import uuid
+from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 from flask_socketio import SocketIO
 from .config import ROOT, Settings
@@ -86,7 +87,8 @@ def create_app(settings=None):
                         (settings.mode == 'live' and runtime.status['capture'] != 'running') or
                         (settings.mode == 'live' and runtime.status['endpoint'] in {'unavailable','limited_wmi'}))
         return jsonify(status='degraded' if degraded else 'ready', mode=settings.mode,
-            ml_mode='model+rules' if runtime.detector.model is not None else 'rules_only',
+            ml_mode=('shadow_model+rules' if runtime.detector.shadow else 'model+rules') if runtime.detector.model is not None else 'rules_only',
+            model_shadow=runtime.detector.shadow,
             database='ready', network_runtime=dict(runtime.status, iface=settings.interface,
                 udp_flows_received=runtime.status['flows_received']),
             model_ready=runtime.detector.model is not None, model_error=runtime.detector.error,
@@ -177,9 +179,26 @@ def create_app(settings=None):
                     output['downloads'].append(dict(path=entry['path'], size=entry['size'], **state))
             if pipeline.exists():
                 output['pipeline'] = json.loads(pipeline.read_text())
+                prepared = output['pipeline'].get('output')
+                if output['pipeline']['stage'] == 'extracting_and_joining_labels' and prepared:
+                    output['pipeline']['days'] = []
+                    for path in sorted(Path(prepared).glob('days/*/progress.json')):
+                        output['pipeline']['days'].append(json.loads(path.read_text()))
         except (OSError, ValueError):
             output['pipeline'] = {'stage': 'status_temporarily_unavailable'}
         return jsonify(output)
+
+    @app.get('/api/canonical-model')
+    def canonical_model():
+        artifact = settings.model or ROOT / 'pretrained/canonical-all-families-v2'
+        path = artifact / 'report.json'
+        if not path.exists():
+            return jsonify(status='not_trained', report=None)
+        try:
+            report = json.loads(path.read_text())
+            return jsonify(status='approved' if report['manifest']['deployment_approved'] else 'candidate', report=report)
+        except (ValueError, OSError, KeyError):
+            return jsonify(status='report_unavailable', report=None)
 
     @app.get('/api/incidents')
     def incidents():

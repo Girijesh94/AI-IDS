@@ -6,7 +6,7 @@
 <p id="message" role="status" aria-live="polite"></p>
 <section aria-labelledby="healthTitle"><h2 id="healthTitle">Collection status</h2><dl id="health"></dl><p id="healthDetail"></p></section>
 <section aria-labelledby="benchTitle"><h2 id="benchTitle">Offline evaluations</h2><p>CSV benchmarks use dataset-specific features. They do not measure live detection performance.</p><div id="benchmarks"></div></section>
-<section aria-labelledby="dataTitle"><h2 id="dataTitle">Dataset preparation</h2><p id="pipeline"></p><div id="downloads"></div></section>
+<section aria-labelledby="dataTitle"><h2 id="dataTitle">Dataset preparation</h2><p id="pipeline"></p><div id="extraction"></div><div id="candidate"></div><div id="downloads"></div></section>
 <section aria-labelledby="incidentTitle"><h2 id="incidentTitle">Incident queue</h2><p>Detections require investigation. An unflagged event is not proof of safety.</p>
 <details><summary>Authorize incident updates</summary><label>Local API token <input id="token" type="password" autocomplete="off"></label><label>Analyst name <input id="analyst" maxlength="100" value="local-operator"></label><p>The token stays in this page’s memory. Set IDS_TOKEN when starting the server.</p></details>
 <div id="incidents"></div></section>

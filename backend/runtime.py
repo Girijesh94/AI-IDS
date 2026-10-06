@@ -2,6 +2,7 @@ import queue
 import threading
 import time
 import copy
+import uuid
 from .detection import Detector
 from .schemas import validate_flow
 
@@ -9,7 +10,7 @@ from .schemas import validate_flow
 class Runtime:
     def __init__(self, settings, store, emit=lambda *args: None):
         self.settings, self.store, self.emit = settings, store, emit
-        self.detector = Detector(settings.model)
+        self.detector = Detector(settings.model, shadow=settings.model_shadow)
         self.lock = threading.RLock()
         self.queue = queue.Queue(settings.queue_size)
         self.stop = threading.Event()
@@ -17,7 +18,7 @@ class Runtime:
         self.sniffer = None
         self.extractor = None
         self.capture_lock = threading.Lock()
-        self.status = dict(mode=settings.mode, capture='disabled', capture_error=None,
+        self.status = dict(run_id=str(uuid.uuid4()), mode=settings.mode, capture='disabled', capture_error=None,
                            interface=settings.interface, flows_received=0, duplicates=0,
                            queue_drops=0, processing_errors=0, last_event=0,
                            collector_heartbeat=0, endpoint='disabled', endpoint_error=None)

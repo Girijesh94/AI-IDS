@@ -3,7 +3,7 @@ import hashlib
 import threading
 import time
 import xml.etree.ElementTree as ET
-from .cmd_detector_hybrid import CMDDetector
+from .command_rules import CMDDetector
 
 
 class EndpointCollector:
@@ -93,6 +93,7 @@ class EndpointCollector:
 
     def _run_wmi(self):
         """Limited fallback: short-lived processes may disappear before WMI reads them."""
+        sysmon_error=self.runtime.status.get('endpoint_error')
         initialized=False
         connection=watcher=process=None
         try:
@@ -103,7 +104,7 @@ class EndpointCollector:
             connection=wmi.WMI()
             watcher=connection.Win32_Process.watch_for('creation')
             self.runtime.status['endpoint']='limited_wmi'
-            self.runtime.status['endpoint_error']='Sysmon unavailable; WMI can miss short-lived processes'
+            self.runtime.status['endpoint_error']=f'Sysmon unavailable ({sysmon_error}); WMI can miss short-lived processes'
             while not self.runtime.stop.is_set():
                 self.runtime.status['endpoint_heartbeat']=time.time()
                 try:

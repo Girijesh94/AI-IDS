@@ -8,11 +8,12 @@ from .schemas import SCHEMA, FEATURES
 
 
 class Detector:
-    def __init__(self, artifact=None):
+    def __init__(self, artifact=None, shadow=False):
         self.model = None
         self.manifest = {}
         self.error = None
         self.history = OrderedDict()
+        self.shadow = shadow
         if artifact:
             try:
                 import joblib
@@ -20,7 +21,7 @@ class Detector:
                 self.manifest = json.loads((artifact / 'manifest.json').read_text())
                 if (self.manifest.get('schema_version') != SCHEMA or
                     self.manifest.get('features') != FEATURES or
-                    self.manifest.get('deployment_approved') is not True):
+                    (self.manifest.get('deployment_approved') is not True and not shadow)):
                     raise ValueError('Model is not approved for the live feature contract')
                 threshold=float(self.manifest['threshold'])
                 if not math.isfinite(threshold) or not 0 <= threshold <= 1:
@@ -34,6 +35,9 @@ class Detector:
                     raise ValueError('Expected a binary benign/attack classifier')
                 if self.model.n_features_in_ != len(FEATURES):
                     raise ValueError('Model feature dimension mismatch')
+                # Single-observation inference is faster without a prediction thread pool.
+                if hasattr(self.model, 'n_jobs'):
+                    self.model.n_jobs = 1
             except Exception as exc:
                 self.error = str(exc)
                 self.model = None
@@ -64,12 +68,12 @@ class Detector:
             threshold = float(self.manifest['threshold'])
             prediction = probability >= threshold
             model_results['random_forest'] = dict(score=probability, is_attack=prediction,
-                                                  reason=f'Classifier threshold {threshold:.4f}')
-            if prediction:
+                                                  shadow=self.shadow, reason=f'Classifier threshold {threshold:.4f}')
+            if prediction and not self.shadow:
                 reasons.append('flow_classifier: suspicious traffic pattern')
                 score = max(score, probability)
         attack = bool(reasons)
         return dict(score=score, is_anomaly=attack, severity='high' if attack else 'low',
                     reason='; '.join(reasons) or 'No detector triggered; this is not proof of benign activity',
                     model_results=model_results, model_version=self.manifest.get('version', 'none'),
-                    rule_version='scan-v1', prediction_status='scored' if self.model is not None else 'rules_only')
+                    rule_version='scan-v1', prediction_status=('shadow' if self.shadow else 'scored') if self.model is not None else 'rules_only')

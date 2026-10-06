@@ -1,0 +1,140 @@
+{
+  "date": "2026-10-07",
+  "regression_tests": 26,
+  "browser": {
+    "page_errors": [],
+    "pages": 5
+  },
+  "bounded_model_runtime": {
+    "observations": 1000,
+    "stored": 1000,
+    "end_to_end_seconds": 14.04157970000233,
+    "windows_per_second": 71.2170582915136,
+    "persistence_p95_ms": 15.079100005095825,
+    "api_p95_ms": 8.723999999347143,
+    "tests": "single producer, synthetic valid observations, temporary SQLite database",
+    "model_version": "canonical-all-families-v2",
+    "model_shadow": true,
+    "soak_72_hours": "not_performed",
+    "shadow_pilot": "not_performed",
+    "packet_capture_driver": "not_validated"
+  },
+  "live_capture_smoke": {
+    "packets": 606,
+    "flow_windows": 28,
+    "queue_drops": 0,
+    "capacity_drops": 0,
+    "processing_errors": 0,
+    "duration_seconds": 15
+  },
+  "capture_days": [
+    {
+      "file": "Monday-WorkingHours.pcap",
+      "counts": {
+        "windows": 793763,
+        "matched": 788867,
+        "written": 79225,
+        "unmatched_tuple": 1642,
+        "unmatched_time": 3254
+      },
+      "extraction": {
+        "packets": 11709971,
+        "capacity_drops": 0,
+        "unsupported_packets": 55925,
+        "out_of_order_packets": 3284
+      },
+      "label_tolerance_seconds": 1.0,
+      "seconds": 135.2579218000028
+    },
+    {
+      "file": "Tuesday-WorkingHours.pcap",
+      "counts": {
+        "windows": 705666,
+        "unmatched_tuple": 1759,
+        "matched": 699038,
+        "written": 69974,
+        "unmatched_time": 326,
+        "ambiguous": 4543
+      },
+      "extraction": {
+        "packets": 11551954,
+        "capacity_drops": 0,
+        "unsupported_packets": 53964,
+        "out_of_order_packets": 3753
+      },
+      "label_tolerance_seconds": 60.0,
+      "seconds": 131.26277720001235
+    },
+    {
+      "file": "Wednesday-workingHours.pcap",
+      "counts": {
+        "windows": 1073474,
+        "matched": 1048541,
+        "unmatched_tuple": 1549,
+        "written": 104515,
+        "unmatched_time": 206,
+        "ambiguous": 23178
+      },
+      "extraction": {
+        "packets": 13788878,
+        "capacity_drops": 0,
+        "unsupported_packets": 57265,
+        "out_of_order_packets": 14608
+      },
+      "label_tolerance_seconds": 60.0,
+      "seconds": 163.21559950000665
+    },
+    {
+      "file": "Thursday-WorkingHours.pcap",
+      "counts": {
+        "windows": 764963,
+        "matched": 759589,
+        "written": 75514,
+        "unmatched_tuple": 1704,
+        "unmatched_time": 143,
+        "ambiguous": 3527
+      },
+      "extraction": {
+        "packets": 9322025,
+        "capacity_drops": 0,
+        "unsupported_packets": 55243,
+        "out_of_order_packets": 3705
+      },
+      "label_tolerance_seconds": 60.0,
+      "seconds": 115.58384790000855
+    },
+    {
+      "file": "Friday-WorkingHours.pcap",
+      "counts": {
+        "windows": 957468,
+        "matched": 903657,
+        "unmatched_tuple": 2343,
+        "written": 90999,
+        "unmatched_time": 221,
+        "ambiguous": 51247
+      },
+      "extraction": {
+        "packets": 9997874,
+        "capacity_drops": 0,
+        "unsupported_packets": 54885,
+        "out_of_order_packets": 8374
+      },
+      "label_tolerance_seconds": 60.0,
+      "seconds": 124.16512890000013
+    }
+  ],
+  "production_qualified": false,
+  "remaining": [
+    "independent live labels",
+    "72-hour full collector soak",
+    "Windows Sysmon event channel repair (4201)",
+    "Rare-family recall and support"
+  ],
+  "sysmon": {
+    "route": "windows_native",
+    "service": "Running",
+    "event_channel": "unavailable",
+    "windows_error": 4201,
+    "full_collector_qualified": false
+  }
+}

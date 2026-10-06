@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class Settings:
     database: Path = ROOT / 'data' / 'soc.db'
     model: Path | None = None
+    model_shadow: bool = False
     mode: str = 'replay'
     interface: str | None = None
     token: str = ''
@@ -17,8 +18,12 @@ class Settings:
 
     @classmethod
     def from_env(cls):
+        bundled = ROOT / 'pretrained/canonical-all-families-v2'
+        artifact = Path(os.environ['IDS_MODEL']).resolve() if os.getenv('IDS_MODEL') else bundled if bundled.exists() else None
+        default_shadow = '1' if artifact == bundled else '0'
         return cls(database=Path(os.getenv('IDS_DB', str(ROOT / 'data' / 'soc.db'))).resolve(),
-                   model=Path(os.environ['IDS_MODEL']).resolve() if os.getenv('IDS_MODEL') else None,
+                   model=artifact,
+                   model_shadow=os.getenv('IDS_MODEL_SHADOW', default_shadow) == '1',
                    mode=os.getenv('IDS_MODE', 'replay'), interface=os.getenv('IDS_INTERFACE'),
                    token=os.getenv('IDS_TOKEN', ''))
 

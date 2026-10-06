@@ -1,37 +1,55 @@
-# Implementation status — 29 September 2026
+# Implementation status — 7 October 2026
 
-## What works now
+## Operational application
 
-The local application supports replay, shared bidirectional flow extraction, deterministic scan and command rules, authenticated ingestion, SQLite storage, incident review, analyst labels, retention and backup. Incoming labels and scores cannot dictate predictions. The dashboard distinguishes replay, live collection, rules and model availability.
+The application runs locally with real Npcap capture, shared IPv4/IPv6 flow windows, authenticated ingestion, deterministic scan/command rules, SQLite persistence, incident review, independent analyst labels, retention and backup. The Operations page shows real collector health and model availability. Payloads are not retained. Sender labels and scores cannot control predictions.
 
-The normal entry point is `scripts/start.ps1`; open http://127.0.0.1:5000/operations. A generated local token is required for changes. The synthetic demonstration exercises extraction, ingestion and grouping without transmitting attack traffic.
+The current live server listens at http://127.0.0.1:5000/operations, using `data/live.db`, the active Wi-Fi interface and the bundled `canonical-all-families-v2` candidate in shadow mode. Classifier predictions are recorded for review. Rules raise incidents. The model remains unapproved for active model alerts.
 
-## Measured evidence
+Npcap is installed and running. A 15-second capture check observed 606 packets and 28 flow windows with zero queue drops, capacity drops or processing errors. The running server has continued collecting real traffic. This check establishes collection plumbing, not detection accuracy.
 
-| Check | Recorded result | Limit |
-| --- | --- | --- |
-| Regression suite | 19 tests passed | Does not establish live detection accuracy |
-| Browser checks | Five pages; no captured JavaScript errors; mobile Operations fits 390 px | Fresh headless Chrome, not every browser |
-| Bounded persistence measurement | 1,000 events; approximately 149 events/s; persistence p95 15.1 ms | One producer on this machine; not sustained capacity |
-| CIC CSV held-out evaluation | Precision 99.70%, recall 45.53%, benign false-positive rate 0.0559% | Friday held out; unseen families and source feature schema |
-| UNSW CSV held-out evaluation | Precision 99.39%, recall 44.54%, benign false-positive rate 0.2361% | Supplied filenames have reversed official row counts; not the standard published split |
+The standalone signed Microsoft Sysmon 15.22 installer validated the configuration but failed at event-manifest registration. The supported built-in Windows optional feature was then enabled and its `Sysmon` service installed successfully with the process-event configuration. The service is running. However, Windows channel access currently returns error 4201 (the instance name is not recognized by a WMI provider), including from an elevated diagnostic. The application therefore remains on the explicitly limited WMI fallback, which can miss short-lived processes. No full Sysmon capture pass is claimed. Installation and channel diagnostics remain under `artifacts/sysmon-*`. The Windows event provider state still needs repair; a Windows restart may be necessary.
 
-Reports are in `artifacts/benchmarks/`, `artifacts/qualification.json` and `artifacts/browser-check.json`. CSV classifiers are offline-only. Their high precision does not compensate for missed attacks, and their features do not match the live extractor.
+## Data and completed training
 
-## Work running or pending
+All five CICIDS2017 captures, eight independent label files and the mirror README finished downloading. Every capture and label file was rechecked against the recorded hash before preparation. Mirror hashes prove integrity against that mirror, not independent publisher authenticity.
 
-1. Download and checksum all five CICIDS2017 packet captures and eight label files. Partial captures resume without discarding saved bytes. The source is a pinned public mirror; mirror hashes establish download integrity, not independent publisher authenticity.
-2. The continuation process waits for complete verification, then extracts canonical windows, joins independent labels and quarantines ambiguous matches. It stops on poor alignment or capacity drops.
-3. Train a canonical candidate on Monday–Wednesday, select the threshold on Thursday and evaluate Friday. Complete sessions are sampled deterministically without using their labels. The resulting candidate remains unapproved.
-4. Install Npcap interactively and configure Sysmon for live collection. The installers have been downloaded; installation is not confirmed. WMI is an explicitly limited fallback and may miss short processes.
-5. Run an independent live shadow pilot and 72-hour soak, measure false alerts and missed scenarios, and review the release thresholds before approving deployment.
+Preparation completed for all five days with no extractor capacity drops. It uses a fast header decoder and the same state machine as live capture. Tests compare the fast/reference paths for PCAP, PCAPNG, nanosecond timestamps, VLAN, IPv6, fragments and timing. One thousand real Tuesday windows were also compared exactly. Repeated same-time reset packets now receive distinct deterministic session/event IDs.
 
-Live progress is available in Operations and `artifacts/pipeline-status.json`. Download logs are `artifacts/download.stdout.log` and `artifacts/download.stderr.log`. A running process requires this computer to remain awake. After a reboot, resume acquisition and continuation using the commands in the README; recorded PIDs are informational and may become stale.
+Labels are matched by bidirectional endpoints/protocol and observation interval. Minute-truncated timing is reported; ambiguous and unmatched labels are quarantined. Coverage is checked over all windows. A deterministic one-in-ten complete-session sample is written without using labels to select sessions. Completed days have output checksums and can be reused after interruption.
 
-UNSW packet captures have not been acquired: the publisher's linked storage redirects to authentication. No authenticated content was bypassed. CIC captures provide the first shared-extractor training path; UNSW CSV results remain separate.
+Two compatible candidates were trained:
 
-## Completion criteria
+| Evaluation | Windows | Precision | Attack recall | Benign FPR |
+| --- | ---: | ---: | ---: | ---: |
+| Strict Friday capture holdout | 60,018 | 95.09% | 35.41% | 0.6691% |
+| All-family grouped holdout | 65,473 | 99.63% | 95.58% | 0.0390% |
 
-This is a functioning replay and rules application with an unfinished model qualification process. It is not a perfect detector or a production-qualified deployment. Release requires verified captures, adequate and audited label alignment, a compatible model with acceptable held-out results, working live collectors, a completed shadow pilot and soak, and a tested recovery procedure.
+The strict candidate trains on Monday–Wednesday and tunes on Thursday. Its absent-family failures are retained in `docs/FRIDAY_HOLDOUT_REPORT.json`. The bundled all-family candidate trains on three of five grouped folds; validation and test each use a separate fold. All segments of a bidirectional capture/endpoint tuple and sessions connected by identical numeric feature vectors remain together. Captures are shared across its partitions; it is an in-dataset evaluation and cannot claim independent-network generalization. Its artifact, checksum, complete report and model card are in `pretrained/canonical-all-families-v2/`.
 
-Historical papers and overview documents describe the earlier prototype and are not evidence for this implementation. Original source and the database were checkpointed under `artifacts/checkpoints/`; the new application uses `data/soc.db`.
+Family results remain uneven: Bot recall is 9.5% on 42 test windows, GoldenEye 73.8%, FTP-Patator 77.9%, and infiltration 0% on one window. Heartbleed and SQL injection have no test support; tiny web/infiltration samples cannot establish reliable family performance. Aggregate precision is not evidence that every family is supported.
+
+Existing CIC and UNSW CSV classifiers remain separate offline benchmarks. UNSW PCAP acquisition remains blocked by the publisher's authentication redirect; no synthetic replacement was used.
+
+## Local validation evidence
+
+- 26 regression checks passed, including import/startup, live feature contract, candidate checksum/approval, shadow isolation, persistence, backup/recovery, data grouping and checkpoint integrity.
+- Five browser pages passed with no captured JavaScript errors. Operations fits a 390-pixel viewport.
+- A bounded 1,000-event synthetic measurement with the candidate enabled stored every event, approximately 71.2 windows/second, scoring/persistence p95 15.1 ms and read API p95 8.7 ms. This measures one producer on this machine, not sustained network capacity.
+- The model can load in a fresh process using the pinned dependencies. GitHub Actions is configured to run the regression checks on Windows after pushes.
+
+Published evidence is in `docs/VALIDATION_RESULTS.json`. Generated local reports, screenshots and diagnostics remain under `artifacts/`.
+
+## Running qualification and remaining gates
+
+A 72-hour **network shadow model** soak has started. It measures real collection stability, requires new telemetry and fails on suspension, polling gaps, server restarts, unavailable capture or drops. Status is in `artifacts/shadow-soak.json`; its PID is in `artifacts/soak.pid`. The computer must remain awake. This is running, not passed. It does not establish endpoint completeness or classifier accuracy.
+
+Production qualification still requires:
+
+1. Repair the Windows Sysmon event channel (error 4201) and validate full endpoint collection.
+2. An uninterrupted full collector soak (`scripts.shadow_soak --require-sysmon`).
+3. Independently reviewed live sessions, false-alert measurement and realistic authorized scenario coverage.
+4. Adequate supported-family evidence and review of the documented weak/rare families.
+5. An independent deployment review and approved manifest, with a recovery/rollback exercise.
+
+`scripts.release_report` computes evidence from reviewed live events and soak records. It never fabricates labels, marks missing evidence as passed or promotes a model. The current release report fails the production gates. The functioning local application and trained shadow candidate are complete; production qualification remains incomplete.

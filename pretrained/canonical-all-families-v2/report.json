@@ -1,0 +1,405 @@
+{
+  "manifest": {
+    "version": "canonical-all-families-v2",
+    "schema_version": "flow-window-v1",
+    "features": [
+      "duration",
+      "src2dst_pkts",
+      "dst2src_pkts",
+      "src2dst_bytes",
+      "dst2src_bytes",
+      "mean_pkt_size",
+      "min_pkt_size",
+      "max_pkt_size",
+      "iat_mean",
+      "tcp_syn",
+      "tcp_rst",
+      "tcp_fin",
+      "proto"
+    ],
+    "threshold": 0.9615429406681015,
+    "deployment_approved": false,
+    "purpose": "candidate_pending_independent_live_pilot",
+    "model_sha256": "1aa756c4295f310a5b10c18e414873c801ad0d928883d796bdf69cbd414fc342",
+    "model_type": "random_forest",
+    "packaging": "joblib compression level 3; identical estimator"
+  },
+  "inputs": {
+    "train": {
+      "rows": 289282,
+      "sessions": 236211,
+      "components": 73503,
+      "families": {
+        "BENIGN": 241726,
+        "DoS Hulk": 23314,
+        "PortScan": 9550,
+        "DDoS": 8164,
+        "DoS GoldenEye": 1937,
+        "DoS slowloris": 1707,
+        "DoS Slowhttptest": 1700,
+        "FTP-Patator": 476,
+        "SSH-Patator": 476,
+        "Bot": 126,
+        "Web Attack \u0096 Brute Force": 41,
+        "Heartbleed": 36,
+        "Web Attack \u0096 XSS": 16,
+        "Infiltration": 11,
+        "Web Attack \u0096 Sql Injection": 2
+      }
+    },
+    "validation": {
+      "rows": 65472,
+      "sessions": 57114,
+      "components": 36663,
+      "families": {
+        "BENIGN": 58960,
+        "PortScan": 3183,
+        "DoS Hulk": 1991,
+        "DDoS": 686,
+        "DoS GoldenEye": 234,
+        "SSH-Patator": 158,
+        "FTP-Patator": 135,
+        "Bot": 42,
+        "DoS slowloris": 40,
+        "DoS Slowhttptest": 26,
+        "Web Attack \u0096 Brute Force": 14,
+        "Web Attack \u0096 XSS": 2,
+        "Infiltration": 1
+      }
+    },
+    "test": {
+      "rows": 65473,
+      "sessions": 57090,
+      "components": 36661,
+      "families": {
+        "BENIGN": 58961,
+        "PortScan": 3183,
+        "DoS Hulk": 1993,
+        "DDoS": 685,
+        "DoS GoldenEye": 233,
+        "SSH-Patator": 158,
+        "FTP-Patator": 136,
+        "Bot": 42,
+        "DoS slowloris": 40,
+        "DoS Slowhttptest": 26,
+        "Web Attack \u0096 Brute Force": 13,
+        "Web Attack \u0096 XSS": 2,
+        "Infiltration": 1
+      }
+    }
+  },
+  "sources": [
+    {
+      "day": "Monday",
+      "version": "canonical-resumable-v3",
+      "capture_sha256": "f6eac599358f216b074338813a1cf7be3cc4e91d116e13efc0dc71f2cca11972",
+      "session_sample_modulus": 10,
+      "source_manifest_sha256": "2a72e6fa330d235e66a4f75f8761b4cac2b4c653ce265b88076f6fcefa42b113",
+      "extractor_sha256": "1b1fb8a5c63c4b8491582d348343f82074f8c25cde506ba0d3dfcf45f0ce5304",
+      "file": "Monday-WorkingHours.pcap",
+      "counts": {
+        "windows": 793763,
+        "matched": 788867,
+        "written": 79225,
+        "unmatched_tuple": 1642,
+        "unmatched_time": 3254
+      },
+      "extraction": {
+        "packets": 11709971,
+        "capacity_drops": 0,
+        "unsupported_packets": 55925,
+        "out_of_order_packets": 3284
+      },
+      "label_tolerance_seconds": 1.0,
+      "seconds": 135.2579218000028,
+      "data_sha256": "b551037ccaab7f873e2a61ff0a2df0536645974e8eec625f2e1843de0330f02b",
+      "labels_sha256": "dd257d7061b60354c3c389f6067890b2d896fae544632f5a21e7267a3aef2f8a"
+    },
+    {
+      "day": "Tuesday",
+      "version": "canonical-resumable-v3",
+      "capture_sha256": "080c2250154c5a174c03660ed0f75a3858d41a27511ba716e780d7bcb1ec4c57",
+      "session_sample_modulus": 10,
+      "source_manifest_sha256": "2a72e6fa330d235e66a4f75f8761b4cac2b4c653ce265b88076f6fcefa42b113",
+      "extractor_sha256": "1b1fb8a5c63c4b8491582d348343f82074f8c25cde506ba0d3dfcf45f0ce5304",
+      "file": "Tuesday-WorkingHours.pcap",
+      "counts": {
+        "windows": 705666,
+        "unmatched_tuple": 1759,
+        "matched": 699038,
+        "written": 69974,
+        "unmatched_time": 326,
+        "ambiguous": 4543
+      },
+      "extraction": {
+        "packets": 11551954,
+        "capacity_drops": 0,
+        "unsupported_packets": 53964,
+        "out_of_order_packets": 3753
+      },
+      "label_tolerance_seconds": 60.0,
+      "seconds": 131.26277720001235,
+      "data_sha256": "67041985a7a2c1cd46640ddc7d36e6a7c3c6a38eb206f76f369f744e13f1fe52",
+      "labels_sha256": "c1e0a991cefc747461e00bc09408994e9c243abaa030b5be9b91c6c1b38f41e4"
+    },
+    {
+      "day": "Wednesday",
+      "version": "canonical-resumable-v3",
+      "capture_sha256": "cd2674db7559a53f24bc03be3239b315700174ccaef72d10f5edc4c1a08f6186",
+      "session_sample_modulus": 10,
+      "source_manifest_sha256": "2a72e6fa330d235e66a4f75f8761b4cac2b4c653ce265b88076f6fcefa42b113",
+      "extractor_sha256": "1b1fb8a5c63c4b8491582d348343f82074f8c25cde506ba0d3dfcf45f0ce5304",
+      "file": "Wednesday-workingHours.pcap",
+      "counts": {
+        "windows": 1073474,
+        "matched": 1048541,
+        "unmatched_tuple": 1549,
+        "written": 104515,
+        "unmatched_time": 206,
+        "ambiguous": 23178
+      },
+      "extraction": {
+        "packets": 13788878,
+        "capacity_drops": 0,
+        "unsupported_packets": 57265,
+        "out_of_order_packets": 14608
+      },
+      "label_tolerance_seconds": 60.0,
+      "seconds": 163.21559950000665,
+      "data_sha256": "a79585ce3f1c76e5e3c255085597d470ff7da292fb70b571be698aa3895a940d",
+      "labels_sha256": "13064b371223628781d4f2870f427eb63e08b73a4c30c3cd5e9acbb219b3e824"
+    },
+    {
+      "day": "Thursday",
+      "version": "canonical-resumable-v3",
+      "capture_sha256": "38f8b1bb276849bf1721f7c4de22bebfa7f59a74e52286d4c0a37edbb118fe01",
+      "session_sample_modulus": 10,
+      "source_manifest_sha256": "2a72e6fa330d235e66a4f75f8761b4cac2b4c653ce265b88076f6fcefa42b113",
+      "extractor_sha256": "1b1fb8a5c63c4b8491582d348343f82074f8c25cde506ba0d3dfcf45f0ce5304",
+      "file": "Thursday-WorkingHours.pcap",
+      "counts": {
+        "windows": 764963,
+        "matched": 759589,
+        "written": 75514,
+        "unmatched_tuple": 1704,
+        "unmatched_time": 143,
+        "ambiguous": 3527
+      },
+      "extraction": {
+        "packets": 9322025,
+        "capacity_drops": 0,
+        "unsupported_packets": 55243,
+        "out_of_order_packets": 3705
+      },
+      "label_tolerance_seconds": 60.0,
+      "seconds": 115.58384790000855,
+      "data_sha256": "575175d12c0736ad7a7363dd167b00f8b9abd5f71a22a34c6ed35d0c269944cf",
+      "labels_sha256": "d601c8235cc94e958fc4e8c1e2eda626e98b3f47942c55e00ee3f10a607fe93e"
+    },
+    {
+      "day": "Friday",
+      "version": "canonical-resumable-v3",
+      "capture_sha256": "beff0dcce1eebc9b2454582f4dc8ed0ba0112b2c619a710bf03af93147254cd0",
+      "session_sample_modulus": 10,
+      "source_manifest_sha256": "2a72e6fa330d235e66a4f75f8761b4cac2b4c653ce265b88076f6fcefa42b113",
+      "extractor_sha256": "1b1fb8a5c63c4b8491582d348343f82074f8c25cde506ba0d3dfcf45f0ce5304",
+      "file": "Friday-WorkingHours.pcap",
+      "counts": {
+        "windows": 957468,
+        "matched": 903657,
+        "unmatched_tuple": 2343,
+        "written": 90999,
+        "unmatched_time": 221,
+        "ambiguous": 51247
+      },
+      "extraction": {
+        "packets": 9997874,
+        "capacity_drops": 0,
+        "unsupported_packets": 54885,
+        "out_of_order_packets": 8374
+      },
+      "label_tolerance_seconds": 60.0,
+      "seconds": 124.16512890000013,
+      "data_sha256": "48eb5c02b498fa71a500067a9e86dd4bc6e9e520500c2e99f9a82207f7f04f65",
+      "labels_sha256": "8bc85fff499e20838a9b20293e6eb4d2fbb9b951f2c5fb8086916907c70795d8"
+    }
+  ],
+  "split_policy": "Three training folds, one validation fold, one untouched test fold; connected components of bidirectional capture/endpoint tuples, session segments and identical numeric feature vectors",
+  "evaluation_scope": "in_dataset_grouped; captures shared across partitions",
+  "validation": {
+    "samples": 65472,
+    "attacks": 6512,
+    "benign": 58960,
+    "tp": 5923,
+    "fp": 57,
+    "tn": 58903,
+    "fn": 589,
+    "precision": 0.9904682274247492,
+    "recall": 0.909551597051597,
+    "fpr": 0.0009667571234735413,
+    "f1": 0.9482869036183157,
+    "average_precision": 0.9973552177119275,
+    "threshold": 0.9615429406681015,
+    "families": {
+      "BENIGN": {
+        "samples": 58960,
+        "flagged": 57,
+        "flag_rate": 0.0009667571234735413
+      },
+      "Bot": {
+        "samples": 42,
+        "flagged": 6,
+        "flag_rate": 0.14285714285714285
+      },
+      "DDoS": {
+        "samples": 686,
+        "flagged": 681,
+        "flag_rate": 0.9927113702623906
+      },
+      "DoS GoldenEye": {
+        "samples": 234,
+        "flagged": 182,
+        "flag_rate": 0.7777777777777778
+      },
+      "DoS Hulk": {
+        "samples": 1991,
+        "flagged": 1961,
+        "flag_rate": 0.9849321948769463
+      },
+      "DoS Slowhttptest": {
+        "samples": 26,
+        "flagged": 20,
+        "flag_rate": 0.7692307692307693
+      },
+      "DoS slowloris": {
+        "samples": 40,
+        "flagged": 30,
+        "flag_rate": 0.75
+      },
+      "FTP-Patator": {
+        "samples": 135,
+        "flagged": 105,
+        "flag_rate": 0.7777777777777778
+      },
+      "Infiltration": {
+        "samples": 1,
+        "flagged": 0,
+        "flag_rate": 0.0
+      },
+      "PortScan": {
+        "samples": 3183,
+        "flagged": 2797,
+        "flag_rate": 0.8787307571473453
+      },
+      "SSH-Patator": {
+        "samples": 158,
+        "flagged": 135,
+        "flag_rate": 0.8544303797468354
+      },
+      "Web Attack \u0096 Brute Force": {
+        "samples": 14,
+        "flagged": 6,
+        "flag_rate": 0.42857142857142855
+      },
+      "Web Attack \u0096 XSS": {
+        "samples": 2,
+        "flagged": 0,
+        "flag_rate": 0.0
+      }
+    }
+  },
+  "test": {
+    "samples": 65473,
+    "attacks": 6512,
+    "benign": 58961,
+    "tp": 6224,
+    "fp": 23,
+    "tn": 58938,
+    "fn": 288,
+    "precision": 0.9963182327517208,
+    "recall": 0.9557739557739557,
+    "fpr": 0.0003900883634945133,
+    "f1": 0.9756250489850301,
+    "average_precision": 0.9989658300795469,
+    "threshold": 0.9615429406681015,
+    "families": {
+      "BENIGN": {
+        "samples": 58961,
+        "flagged": 23,
+        "flag_rate": 0.0003900883634945133
+      },
+      "Bot": {
+        "samples": 42,
+        "flagged": 4,
+        "flag_rate": 0.09523809523809523
+      },
+      "DDoS": {
+        "samples": 685,
+        "flagged": 678,
+        "flag_rate": 0.9897810218978103
+      },
+      "DoS GoldenEye": {
+        "samples": 233,
+        "flagged": 172,
+        "flag_rate": 0.7381974248927039
+      },
+      "DoS Hulk": {
+        "samples": 1993,
+        "flagged": 1963,
+        "flag_rate": 0.9849473156046161
+      },
+      "DoS Slowhttptest": {
+        "samples": 26,
+        "flagged": 20,
+        "flag_rate": 0.7692307692307693
+      },
+      "DoS slowloris": {
+        "samples": 40,
+        "flagged": 28,
+        "flag_rate": 0.7
+      },
+      "FTP-Patator": {
+        "samples": 136,
+        "flagged": 106,
+        "flag_rate": 0.7794117647058824
+      },
+      "Infiltration": {
+        "samples": 1,
+        "flagged": 0,
+        "flag_rate": 0.0
+      },
+      "PortScan": {
+        "samples": 3183,
+        "flagged": 3117,
+        "flag_rate": 0.9792648444863337
+      },
+      "SSH-Patator": {
+        "samples": 158,
+        "flagged": 131,
+        "flag_rate": 0.8291139240506329
+      },
+      "Web Attack \u0096 Brute Force": {
+        "samples": 13,
+        "flagged": 5,
+        "flag_rate": 0.38461538461538464
+      },
+      "Web Attack \u0096 XSS": {
+        "samples": 2,
+        "flagged": 0,
+        "flag_rate": 0.0
+      }
+    }
+  },
+  "release_gates": {
+    "independent_capture_test": false,
+    "shadow_pilot": false,
+    "soak_72_hours": false
+  },
+  "limitations": [
+    "Five captures from one dated laboratory environment; no modern production generalization claim.",
+    "Identical features can have conflicting labels; every connected session is kept in one partition.",
+    "All-family model uses Friday labels for training; it cannot reuse the strict Friday holdout as its independent test.",
+    "Rare family support and minute-level label uncertainty remain visible in counts.",
+    "Threshold selected only on validation at a 0.1% benign false-positive budget; test FPR can differ."
+  ]
+}

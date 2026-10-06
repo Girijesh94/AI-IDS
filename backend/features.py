@@ -5,6 +5,8 @@ Five-second disjoint observation windows, ten-second idle timeout, sixty-second
 session segmentation. The first packet establishes orientation. No payloads retained.
 """
 import hashlib
+import socket
+import struct
 from .schemas import SCHEMA, validate_flow
 
 
@@ -19,6 +21,7 @@ class FlowExtractor:
         self.out_of_order = 0
         self.last_time = 0.0
         self.next_sweep = 0.0
+        self.session_sequence = 0
 
     def _record(self, state):
         f = state['window']
@@ -61,8 +64,21 @@ class FlowExtractor:
     def add(self, packet):
         from scapy.layers.inet import IP, TCP, UDP, ICMP
         from scapy.layers.inet6 import IPv6
-        self.packets += 1
         now = float(packet.time)
+        ip = packet.getlayer(IP) or packet.getlayer(IPv6)
+        values = None
+        if ip is not None and not (isinstance(ip, IP) and (ip.frag or int(ip.flags) & 1)) and not packet.haslayer('IPv6ExtHdrFragment'):
+            transport = packet.getlayer(TCP) or packet.getlayer(UDP)
+            proto = 6 if packet.haslayer(TCP) else 17 if packet.haslayer(UDP) else int(getattr(ip, 'proto', getattr(ip, 'nh', 0)))
+            if proto in (1, 6, 17, 58):
+                values = (ip.src, ip.dst, int(transport.sport) if transport else 0,
+                          int(transport.dport) if transport else 0, proto, len(bytes(ip)),
+                          int(packet[TCP].flags) if packet.haslayer(TCP) else 0)
+        return self.add_values(now, values)
+
+    def add_values(self, now, values):
+        """Shared state machine for decoded live packets and fast PCAP headers."""
+        self.packets += 1
         if now < self.last_time:
             self.out_of_order += 1
             return []
@@ -72,24 +88,11 @@ class FlowExtractor:
         if now >= self.next_sweep:
             emitted = self.flush(now)
             self.next_sweep = now + 0.25
-        ip = packet.getlayer(IP) or packet.getlayer(IPv6)
-        if ip is None:
+        if values is None:
             self.unsupported += 1
             return emitted
-        # Fragmented packets cannot reliably be assigned transport ports without reassembly.
-        if isinstance(ip, IP) and (ip.frag or int(ip.flags) & 1):
-            self.unsupported += 1
-            return emitted
-        if packet.haslayer('IPv6ExtHdrFragment'):
-            self.unsupported += 1
-            return emitted
-        transport = packet.getlayer(TCP) or packet.getlayer(UDP)
-        proto = 6 if packet.haslayer(TCP) else 17 if packet.haslayer(UDP) else int(getattr(ip, 'proto', getattr(ip, 'nh', 0)))
-        if proto not in (1, 6, 17, 58):
-            self.unsupported += 1
-            return emitted
-        a = (ip.src, int(transport.sport) if transport else 0)
-        b = (ip.dst, int(transport.dport) if transport else 0)
+        src, dst, sport, dport, proto, size, flags = values
+        a, b = (src, sport), (dst, dport)
         key = (min(a, b), max(a, b), proto)
         state = self.flows.get(key)
         if state and (now - state['first'] >= 60 or now - state['last'] >= 10):
@@ -107,7 +110,10 @@ class FlowExtractor:
             if len(self.flows) >= self.max_flows:
                 self.dropped += 1
                 return emitted
-            identity = hashlib.sha256(f'{self.sensor_id}|{key}|{now:.9f}'.encode()).hexdigest()[:32]
+            # Captures can contain successive RST packets at the exact same time.
+            # Include deterministic creation order so those sessions cannot collide.
+            self.session_sequence += 1
+            identity = hashlib.sha256(f'{self.sensor_id}|{key}|{now:.9f}|{self.session_sequence}'.encode()).hexdigest()[:32]
             state = dict(src=a, dst=b, proto=proto, first=now, last=now,
                          session_id=identity, index=0)
             self._window(state, now)
@@ -119,7 +125,6 @@ class FlowExtractor:
             state['window_start'] = now
         else:
             f['iat_sum'] += now - state['last']
-        size = len(bytes(ip))
         direction = 'src2dst' if a == state['src'] else 'dst2src'
         f[direction + '_pkts'] += 1
         f[direction + '_bytes'] += size
@@ -128,23 +133,94 @@ class FlowExtractor:
         f['min_pkt_size'] = min(f['min_pkt_size'], size)
         f['max_pkt_size'] = max(f['max_pkt_size'], size)
         if proto == 6:
-            flags = int(packet[TCP].flags)
             for field, mask in [('tcp_syn', 2), ('tcp_rst', 4), ('tcp_fin', 1)]:
                 f[field] += bool(flags & mask)
         state['last'] = now
-        if proto == 6 and int(packet[TCP].flags) & 4:
+        if proto == 6 and flags & 4:
             emitted.append(self._record(state))
             del self.flows[key]
         return emitted
 
 
-def read_pcap(path, sensor_id='replay', stats=None):
+def read_pcap(path, sensor_id='replay', stats=None, fast=True):
+    """Decode Ethernet IPv4 headers directly; use Scapy for other formats.
+
+    Both paths feed the same extraction state machine. No payload is decoded or
+    retained by the fast path. PCAPNG and nanosecond PCAP preserve timestamp precision.
+    """
+    from scapy.utils import RawPcapReader
+    if fast:
+        with RawPcapReader(str(path)) as reader:
+            compatible = not hasattr(reader, 'linktype') or reader.linktype == 1
+        if compatible:
+            yield from _read_fast(path, sensor_id, stats)
+            return
+    yield from _read_reference(path, sensor_id, stats)
+
+
+def _read_reference(path, sensor_id='replay', stats=None):
     from scapy.utils import PcapReader
     extractor = FlowExtractor(sensor_id)
     try:
         with PcapReader(str(path)) as packets:
             for packet in packets:
                 yield from extractor.add(packet)
+        yield from extractor.flush(final=True)
+    finally:
+        if stats is not None:
+            stats.update(packets=extractor.packets, capacity_drops=extractor.dropped,
+                         unsupported_packets=extractor.unsupported, out_of_order_packets=extractor.out_of_order)
+
+
+def _read_fast(path, sensor_id, stats):
+    from scapy.utils import RawPcapReader
+    from scapy.layers.l2 import Ether
+    from scapy.config import conf
+    extractor = FlowExtractor(sensor_id)
+    try:
+        with RawPcapReader(str(path)) as packets:
+            for raw, meta in packets:
+                if hasattr(meta, 'tshigh'):
+                    if meta.tshigh is None:
+                        raise ValueError('PCAPNG packet has no observation timestamp')
+                    now = ((meta.tshigh << 32) + meta.tslow) / meta.tsresol
+                    linktype = meta.linktype
+                else:
+                    scale = 1000000000 if packets.nano else 1000000
+                    now = (meta.sec * scale + meta.usec) / scale
+                    linktype = packets.linktype
+                if linktype != 1:
+                    packet = conf.l2types.num2layer[linktype](raw)
+                    packet.time = now
+                    yield from extractor.add(packet)
+                    continue
+                offset = 14
+                kind = int.from_bytes(raw[12:14], 'big')
+                while kind in (0x8100, 0x88a8) and len(raw) >= offset + 4:
+                    kind = int.from_bytes(raw[offset+2:offset+4], 'big')
+                    offset += 4
+                if kind != 0x0800 or len(raw) < offset + 20:
+                    packet = Ether(raw)
+                    packet.time = now
+                    yield from extractor.add(packet)
+                    continue
+                header = (raw[offset] & 15) * 4
+                proto = raw[offset+9]
+                fragment = int.from_bytes(raw[offset+6:offset+8], 'big') & 0x3fff
+                transport = offset + header
+                if fragment:
+                    yield from extractor.add_values(now, None)
+                    continue
+                if header < 20 or proto not in (6, 17) or len(raw) < transport + (20 if proto == 6 else 8):
+                    packet = Ether(raw)
+                    packet.time = now
+                    yield from extractor.add(packet)
+                    continue
+                sport, dport = struct.unpack_from('!HH', raw, transport) if proto in (6, 17) else (0, 0)
+                values = (socket.inet_ntoa(raw[offset+12:offset+16]),
+                          socket.inet_ntoa(raw[offset+16:offset+20]), sport, dport,
+                          proto, len(raw)-offset, raw[transport+13] if proto == 6 else 0)
+                yield from extractor.add_values(now, values)
         yield from extractor.flush(final=True)
     finally:
         if stats is not None:

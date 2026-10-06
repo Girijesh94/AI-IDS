@@ -18,6 +18,15 @@ from .benchmark import sha, metrics, threshold_for
 
 
 def train(directory, output, session_sample_modulus=10):
+    preparation = None
+    report_path = directory / 'extraction-report.json'
+    if report_path.exists():
+        preparation = json.loads(report_path.read_text())
+        if preparation.get('status') != 'complete':
+            raise ValueError('Preparation is incomplete')
+        if preparation.get('preparation_version') in {'canonical-resumable-v2', 'canonical-resumable-v3'}:
+            # Preparation already selected complete sessions; do not sample twice.
+            session_sample_modulus = 1
     data, manifests, seen_sessions, seen_captures, seen_vectors = {}, {}, set(), set(), set()
     for split in ['train', 'validation', 'test']:
         path = directory / f'{split}.jsonl'
@@ -68,7 +77,7 @@ def train(directory, output, session_sample_modulus=10):
                     threshold=threshold, deployment_approved=False, purpose='candidate_pending_shadow_pilot',
                     model_sha256=sha(output / 'model.joblib'), model_type='random_forest')
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2))
-    (output / 'report.json').write_text(json.dumps(dict(manifest=manifest, inputs=manifests, test=result,
+    (output / 'report.json').write_text(json.dumps(dict(manifest=manifest, inputs=manifests, preparation=preparation, test=result,
         release_gates={'independent_test': True, 'shadow_pilot': False, 'soak_72_hours': False},
         note='Candidate only. Complete live release gates before deployment approval.'), indent=2))
     print(output)

@@ -1,0 +1,25 @@
+{
+  "version": "canonical-all-families-v2",
+  "schema_version": "flow-window-v1",
+  "features": [
+    "duration",
+    "src2dst_pkts",
+    "dst2src_pkts",
+    "src2dst_bytes",
+    "dst2src_bytes",
+    "mean_pkt_size",
+    "min_pkt_size",
+    "max_pkt_size",
+    "iat_mean",
+    "tcp_syn",
+    "tcp_rst",
+    "tcp_fin",
+    "proto"
+  ],
+  "threshold": 0.9615429406681015,
+  "deployment_approved": false,
+  "purpose": "candidate_pending_independent_live_pilot",
+  "model_sha256": "1aa756c4295f310a5b10c18e414873c801ad0d928883d796bdf69cbd414fc342",
+  "model_type": "random_forest",
+  "packaging": "joblib compression level 3; identical estimator"
+}
