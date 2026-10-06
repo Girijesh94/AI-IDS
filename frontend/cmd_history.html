@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMD Alert History - SOC Dashboard</title>
+    <style>
+        :root {
+            --color-primary: #2196F3;
+            --color-primary-hover: #1976D2;
+            --color-success: #4CAF50;
+            --color-warning: #FF9800;
+            --color-error: #F44336;
+            --color-bg: #0F1419;
+            --color-bg-secondary: #1A1F26;
+            --color-bg-tertiary: #25292E;
+            --color-text: #E8EAED;
+            --color-text-secondary: #B0B4B8;
+            --color-border: #393C41;
+            --color-critical: #FF3D00;
+            --color-high: #F57C00;
+            --radius: 8px;
+            --transition: 0.3s ease;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--color-bg);
+            color: var(--color-text);
+            overflow-x: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0F1419 0%, #1A1F26 100%);
+        }
+
+        .header {
+            background: linear-gradient(to right, #1A1F26, #25292E);
+            border-bottom: 2px solid var(--color-border);
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        .header-left { display: flex; align-items: center; gap: 15px; }
+        .logo { font-size: 24px; font-weight: bold; }
+        .header-title { font-size: 20px; font-weight: 600; }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid var(--color-success);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-dot {
+            width: 8px; height: 8px;
+            background: var(--color-success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        .dashboard {
+            padding: 30px;
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .card {
+            background: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius);
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            animation: slideInLeft 0.5s ease forwards;
+        }
+
+        .card-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 15px; border-bottom: 1px solid var(--color-border); padding-bottom: 10px;
+        }
+
+        .card-title { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .card-icon { font-size: 20px; }
+
+        .table-container { overflow-y: auto; }
+        .alerts-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .alerts-table thead { background: rgba(255, 61, 0, 0.1); position: sticky; top: 0; }
+        .alerts-table th { padding: 12px; text-align: left; font-weight: 600; border-bottom: 2px solid var(--color-border); color: var(--color-critical); }
+        .alerts-table td { padding: 12px; border-bottom: 1px solid var(--color-border); }
+        .alerts-table tr:hover { background: rgba(255, 61, 0, 0.05); }
+
+        .cmd-text { font-family: 'Monaco', monospace; font-size: 11px; background: rgba(0,0,0,0.3); padding: 4px 6px; border-radius: 3px; word-break: break-all; }
+
+        .severity-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+        .severity-critical { background: rgba(255, 61, 0, 0.2); color: var(--color-critical); border: 1px solid var(--color-critical); }
+        .severity-high { background: rgba(245, 124, 0, 0.2); color: var(--color-high); border: 1px solid var(--color-high); }
+
+        .confidence-score { font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+        .confidence-high { background: rgba(255, 61, 0, 0.2); color: var(--color-critical); }
+        .confidence-medium { background: rgba(245, 124, 0, 0.2); color: var(--color-high); }
+
+        .controls { display: flex; gap: 10px; }
+        .filter-btn, .btn { padding: 8px 16px; background: var(--color-bg-tertiary); border: 1px solid var(--color-border); color: var(--color-text); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500; transition: all var(--transition); text-decoration: none; }
+        .filter-btn:hover, .btn:hover { background: var(--color-primary); border-color: var(--color-primary); }
+        .filter-btn.active { background: var(--color-primary); border-color: var(--color-primary); }
+
+        .loading { color: var(--color-text-secondary); font-size: 12px; text-align: center; padding: 10px; }
+
+        @keyframes slideInLeft { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-left">
+                <div class="logo">🛡️</div>
+                <div>
+                    <div class="header-title">CMD Alert History</div>
+                    <div style="display:flex; align-items:center; gap:10px; margin-top:4px;">
+                        <a href="/" class="btn">Back to Dashboard</a>
+                        <a href="/network_flows.html" class="btn">Network Flows</a>
+                        <span style="font-size: 12px; color: var(--color-text-secondary);">AI-Based Threat Detection</span>
+                    </div>
+                </div>
+            </div>
+            <div class="status-indicator">
+                <span class="status-dot"></span>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            <div class="card table-container">
+                <div class="card-header">
+                    <div class="card-title"><span class="card-icon">🔍</span>Malicious Commands History</div>
+                    <div class="controls">
+                        <button class="filter-btn active" onclick="filterCmdAlerts('all', event)">All</button>
+                        <button class="filter-btn" onclick="filterCmdAlerts('critical', event)">Critical</button>
+                        <button class="filter-btn" onclick="filterCmdAlerts('high', event)">High</button>
+                    </div>
+                </div>
+                <table class="alerts-table" id="cmdAlertsTable">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Severity</th>
+                            <th>Command</th>
+                            <th>Model confidence</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cmdAlertsBody">
+                        <tr><td colspan="5" class="loading">⏳ Loading CMD detections...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+        const API_URL = '/api';
+        const POLLING_INTERVAL = 5000;
+        const dashboardState = { cmdAlerts: [] };
+
+        async function fetchHealthStatus() {
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                if(response.ok){const h=await response.json();document.getElementById('statusText').textContent=h.mode+' / '+h.status+' / '+h.ml_mode;}
+            } catch (error) {
+                document.getElementById('statusText').textContent = 'Offline';
+            }
+        }
+
+        async function fetchCmdDetections(limit = 100, severity = null) {
+            try {
+                let url = `${API_URL}/cmd-detections?limit=${limit}`;
+                if (severity) url += `&severity=${severity}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                dashboardState.cmdAlerts = data.detections || [];
+                updateCmdAlertsTable(dashboardState.cmdAlerts);
+            } catch (error) {
+                console.error('Fetch CMD detections error:', error);
+            }
+        }
+
+        function updateCmdAlertsTable(alerts) {
+            const tbody=document.getElementById('cmdAlertsBody');tbody.replaceChildren();
+            if(!alerts.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=5;td.textContent='No command observations recorded. Check endpoint collection in Operations.';tr.append(td);tbody.append(tr);return;}
+            for(const item of alerts){const tr=document.createElement('tr');for(const value of [new Date(item.timestamp*1000).toLocaleString(),item.severity,item.command,'Unavailable (rules only)',item.reason]){const td=document.createElement('td');td.textContent=value;tr.append(td);}tbody.append(tr);}
+        }
+
+        function filterCmdAlerts(severity, ev) {
+            document.querySelectorAll('.controls .filter-btn').forEach(btn => btn.classList.remove('active'));
+            if (ev && ev.target) ev.target.classList.add('active');
+            const filtered = severity === 'all' ? dashboardState.cmdAlerts : dashboardState.cmdAlerts.filter(a => a.severity === severity);
+            updateCmdAlertsTable(filtered);
+        }
+
+        async function initializeDashboard() {
+            await fetchHealthStatus();
+            await fetchCmdDetections(100);
+            setInterval(() => fetchCmdDetections(100), POLLING_INTERVAL);
+        }
+
+        document.addEventListener('DOMContentLoaded', initializeDashboard);
+    </script>
+</body>
+</html>

@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI-IDS — SOC Analyst Dashboard</title>
+<script src="https://cdn.socket.io/4.5.2/socket.io.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#080C14;--card:rgba(10,16,32,0.85);--border:rgba(14,165,233,0.15);
+  --blue:#0EA5E9;--blue2:#38BDF8;--purple:#8B5CF6;
+  --green:#22C55E;--red:#EF4444;--amber:#F59E0B;--cyan:#06B6D4;
+  --text:#CBD5E1;--muted:#475569;--bright:#F1F5F9;--rad:10px;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%;overflow:hidden;}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column;}
+
+/* MATRIX CANVAS */
+#matrix{position:fixed;inset:0;z-index:0;opacity:.055;pointer-events:none;}
+
+/* FLASH */
+#fl{position:fixed;inset:0;background:rgba(239,68,68,.08);z-index:999;opacity:0;pointer-events:none;transition:opacity .2s;}
+#fl.on{opacity:1;}
+
+/* SHELL */
+.shell{position:relative;z-index:1;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+
+/* TOPNAV */
+.nav{
+  background:rgba(8,12,20,.92);backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);
+  padding:0 24px;height:52px;
+  display:flex;align-items:center;justify-content:space-between;
+  flex-shrink:0;
+}
+.nav-l{display:flex;align-items:center;gap:20px;}
+.logo{display:flex;align-items:center;gap:10px;}
+.logo-box{
+  width:32px;height:32px;border-radius:8px;
+  background:linear-gradient(135deg,var(--blue),var(--purple));
+  display:flex;align-items:center;justify-content:center;font-size:16px;
+  box-shadow:0 0 16px rgba(14,165,233,.5);
+  animation:logoGlow 3s ease-in-out infinite;
+}
+@keyframes logoGlow{0%,100%{box-shadow:0 0 14px rgba(14,165,233,.5);}50%{box-shadow:0 0 28px rgba(139,92,246,.7);}}
+.logo-t{font-size:15px;font-weight:700;color:var(--bright);letter-spacing:.5px;}
+.logo-s{font-size:9px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;}
+.nav-links{display:flex;gap:2px;}
+.nl{
+  padding:6px 14px;border-radius:6px;text-decoration:none;
+  color:var(--muted);font-size:12px;font-weight:500;
+  transition:all .2s;letter-spacing:.3px;
+}
+.nl:hover{color:var(--text);background:rgba(255,255,255,.05);}
+.nl.active{color:var(--blue2);background:rgba(14,165,233,.1);border:1px solid rgba(14,165,233,.2);}
+.nav-r{display:flex;align-items:center;gap:10px;}
+.live-ind{
+  display:flex;align-items:center;gap:6px;
+  padding:5px 12px;border-radius:20px;
+  background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);
+  font-size:10px;font-weight:600;color:var(--green);letter-spacing:1px;
+}
+.ld{width:6px;height:6px;border-radius:50%;background:var(--green);animation:ldPulse 1.5s ease-in-out infinite;}
+@keyframes ldPulse{0%,100%{box-shadow:0 0 4px var(--green);}50%{box-shadow:0 0 14px var(--green);}}
+.threat-badge{padding:5px 12px;border-radius:20px;font-size:10px;font-weight:700;border:1px solid;}
+.tb-n{background:rgba(34,197,94,.08);border-color:rgba(34,197,94,.3);color:var(--green);}
+.tb-h{background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.3);color:var(--amber);}
+.tb-c{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3);color:var(--red);}
+
+/* MAIN BODY */
+.body{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:14px 20px;gap:12px;}
+
+/* KPI ROW */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;flex-shrink:0;}
+.kc{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--rad);
+  padding:14px 16px;position:relative;overflow:hidden;
+  animation:kIn .4s ease both;transition:border-color .3s,box-shadow .3s;
+}
+.kc:hover{border-color:rgba(14,165,233,.4);box-shadow:0 0 30px rgba(14,165,233,.06);}
+@keyframes kIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+.kc:nth-child(1){animation-delay:.0s;}
+.kc:nth-child(2){animation-delay:.06s;}
+.kc:nth-child(3){animation-delay:.12s;}
+.kc:nth-child(4){animation-delay:.18s;}
+.kc-accent{position:absolute;top:0;left:0;right:0;height:2px;background:var(--ac,var(--blue));}
+.kc-hd{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
+.kc-lbl{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+.kc-icon{font-size:16px;}
+.kc-val{font-size:28px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--ac,var(--blue2));}
+.kc-sub{font-size:10px;color:var(--muted);margin-top:3px;}
+.kc-spark{height:28px;margin-top:8px;}
+
+/* MIDDLE ROW */
+.mid{display:grid;grid-template-columns:1fr 380px;gap:10px;flex:1;min-height:0;}
+
+/* CHART CARD */
+.chart-card{background:var(--card);border:1px solid var(--border);border-radius:var(--rad);display:flex;flex-direction:column;overflow:hidden;}
+.cc-hd{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.cc-t{font-size:12px;font-weight:600;color:var(--bright);display:flex;align-items:center;gap:7px;}
+.cc-dot{width:7px;height:7px;border-radius:50%;}
+.cc-body{flex:1;position:relative;padding:8px;}
+
+/* WORLD MAP AREA */
+.world-wrap{flex:1;position:relative;overflow:hidden;}
+#worldCv{width:100%;height:100%;}
+
+/* FEED CARD */
+.feed-card{background:var(--card);border:1px solid var(--border);border-radius:var(--rad);display:flex;flex-direction:column;overflow:hidden;}
+.feed-body{flex:1;overflow-y:auto;padding:4px 0;}
+
+/* ALERT ROW */
+.ar{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.03);
+  transition:background .15s;cursor:default;
+}
+.ar:hover{background:rgba(14,165,233,.04);}
+.ar:last-child{border-bottom:0;}
+.ar-sev{width:3px;border-radius:2px;align-self:stretch;flex-shrink:0;}
+.ar-body{flex:1;min-width:0;}
+.ar-conn{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--blue2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ar-reason{font-size:10px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ar-r{flex-shrink:0;text-align:right;}
+.ar-score{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;}
+.ar-time{font-size:9px;color:var(--muted);margin-top:1px;}
+.ar-new{animation:newRow .5s ease both;}
+@keyframes newRow{from{background:rgba(14,165,233,.12);}to{background:transparent;}}
+
+/* BOTTOM ROW */
+.bot{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;flex-shrink:0;}
+.bot-card{background:var(--card);border:1px solid var(--border);border-radius:var(--rad);overflow:hidden;}
+.bc-hd{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.bc-t{font-size:11px;font-weight:600;color:var(--bright);display:flex;align-items:center;gap:6px;}
+.bc-body{padding:10px 14px;}
+
+/* MODEL MINI */
+.mm{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);}
+.mm:last-child{border-bottom:0;}
+.mm-name{font-size:11px;font-weight:500;min-width:120px;display:flex;align-items:center;gap:5px;}
+.mm-bars{flex:1;display:flex;flex-direction:column;gap:3px;}
+.mm-bar-row{display:flex;align-items:center;gap:6px;}
+.mm-bl{font-size:8px;color:var(--muted);width:24px;text-transform:uppercase;}
+.mm-track{flex:1;background:rgba(255,255,255,.07);border-radius:3px;height:4px;overflow:hidden;}
+.mm-fill{height:100%;border-radius:3px;transition:width 1.2s cubic-bezier(.25,.8,.25,1);width:0;}
+.mm-pct{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;min-width:30px;text-align:right;}
+
+/* DEFCON */
+.dc-row{display:flex;gap:6px;}
+.dc-item{flex:1;padding:8px 6px;text-align:center;border-radius:7px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02);transition:all .35s;}
+.dc-item.on-c{border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.08);box-shadow:0 0 18px rgba(239,68,68,.15);}
+.dc-item.on-h{border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.08);}
+.dc-item.on-m{border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.06);}
+.dc-item.on-n{border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.08);}
+.dc-ico{font-size:18px;line-height:1;margin-bottom:3px;}
+.dc-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+.dc-desc{font-size:8px;color:var(--muted);margin-top:1px;}
+
+/* PILLS */
+.pills{display:flex;gap:4px;}
+.pill{padding:3px 9px;border-radius:20px;font-size:9px;font-weight:600;cursor:pointer;border:1px solid rgba(255,255,255,.08);color:var(--muted);background:transparent;transition:all .15s;}
+.pill.active,.pill:hover{border-color:rgba(14,165,233,.4);color:var(--blue2);background:rgba(14,165,233,.08);}
+
+/* BADGE */
+.bdg{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;}
+.b-c{background:rgba(239,68,68,.18);color:#FCA5A5;}
+.b-h{background:rgba(245,158,11,.18);color:#FCD34D;}
+.b-m{background:rgba(251,191,36,.12);color:#FDE68A;}
+.b-l{background:rgba(14,165,233,.15);color:#7DD3FC;}
+.b-on{background:rgba(34,197,94,.15);color:#86EFAC;}
+.b-off{background:rgba(239,68,68,.15);color:#FCA5A5;}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:3px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:rgba(14,165,233,.25);border-radius:2px;}
+
+/* BOTTOM STATUS */
+.statusbar{
+  background:rgba(8,12,20,.95);border-top:1px solid var(--border);
+  padding:5px 20px;display:flex;align-items:center;gap:18px;flex-shrink:0;
+  font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);
+}
+.sb-item{display:flex;align-items:center;gap:5px;}
+.sb-dot{width:5px;height:5px;border-radius:50%;}
+.loading{text-align:center;padding:20px;color:var(--muted);font-size:11px;}
+</style>
+</head>
+<body>
+<canvas id="matrix"></canvas>
+<div id="fl"></div>
+
+<div class="shell">
+<!-- TOPNAV -->
+<nav class="nav">
+  <div class="nav-l">
+    <div class="logo">
+      <div class="logo-box">🛡️</div>
+      <div><div class="logo-t">AI-IDS</div><div class="logo-s">SOC Command</div></div>
+    </div>
+    <div class="nav-links">
+      <a href="/"               class="nl active">Dashboard</a>
+      <a href="/network_flows.html" class="nl">Network Flows</a>
+      <a href="/operations" class="nl">Operations</a>
+      <a href="/system_logs.html"    class="nl">System Logs</a>
+      <a href="/cmd_history.html"    class="nl">CMD History</a>
+    </div>
+  </div>
+  <div class="nav-r">
+    <div class="live-ind"><div class="ld"></div>LIVE</div>
+    <div class="threat-badge tb-n" id="tBadge">NORMAL</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted)" id="clock">—</div>
+  </div>
+</nav>
+
+<div class="body">
+  <!-- KPI ROW -->
+  <div class="kpi-row">
+    <div class="kc"><div class="kc-accent" style="--ac:var(--blue)"></div>
+      <div class="kc-hd"><div class="kc-lbl">Total Alerts</div><div class="kc-icon">📡</div></div>
+      <div class="kc-val" id="v1" style="--ac:#38BDF8">—</div>
+      <div class="kc-sub">Network + CMD · 24h</div>
+      <canvas class="kc-spark" id="sp1"></canvas>
+    </div>
+    <div class="kc"><div class="kc-accent" style="--ac:var(--red)"></div>
+      <div class="kc-hd"><div class="kc-lbl">Critical</div><div class="kc-icon">🚨</div></div>
+      <div class="kc-val" id="v2" style="--ac:#FCA5A5">—</div>
+      <div class="kc-sub">Immediate action required</div>
+      <canvas class="kc-spark" id="sp2"></canvas>
+    </div>
+    <div class="kc"><div class="kc-accent" style="--ac:var(--amber)"></div>
+      <div class="kc-hd"><div class="kc-lbl">High Severity</div><div class="kc-icon">⚡</div></div>
+      <div class="kc-val" id="v3" style="--ac:#FCD34D">—</div>
+      <div class="kc-sub">Monitor closely</div>
+      <canvas class="kc-spark" id="sp3"></canvas>
+    </div>
+    <div class="kc"><div class="kc-accent" style="--ac:var(--purple)"></div>
+      <div class="kc-hd"><div class="kc-lbl">CMD Threats</div><div class="kc-icon">💻</div></div>
+      <div class="kc-val" id="v4" style="--ac:#C4B5FD">—</div>
+      <div class="kc-sub">Malicious commands</div>
+      <canvas class="kc-spark" id="sp4"></canvas>
+    </div>
+  </div>
+
+  <!-- MIDDLE -->
+  <div class="mid">
+    <!-- World Map + Chart -->
+    <div class="chart-card">
+      <div class="cc-hd">
+        <div class="cc-t"><div class="cc-dot" style="background:var(--cyan)"></div>Live Network Activity</div>
+        <div class="pills">
+          <button class="pill active" onclick="setNet('traffic',this)" id="pNet">All Traffic</button>
+          <button class="pill" onclick="setNet('alerts',this)">Alerts</button>
+          <button class="pill" onclick="setNet('critical',this)">Critical</button>
+        </div>
+      </div>
+      <div class="cc-body" style="position:relative;">
+        <div style="position:absolute;top:10px;left:16px;z-index:10;display:flex;gap:20px;pointer-events:none;">
+          <div><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:600">Packets/s</div><div id="livePps" style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:var(--blue2);text-shadow:0 0 10px rgba(14,165,233,.4)">0</div></div>
+          <div><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:600">Bandwidth</div><div id="liveBw" style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:var(--cyan);text-shadow:0 0 10px rgba(6,182,212,.4)">0 B/s</div></div>
+          <div><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:600">Active Conns</div><div id="liveConn" style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:var(--purple);text-shadow:0 0 10px rgba(139,92,246,.4)">0</div></div>
+        </div>
+        <canvas id="actChart" style="position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;"></canvas>
+      </div>
+      <div style="border-top:1px solid var(--border);flex:1;overflow:auto;max-height:200px">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead style="position:sticky;top:0;background:rgba(8,12,20,.95);z-index:1">
+            <tr>
+              <th style="padding:7px 14px;text-align:left;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);border-bottom:1px solid var(--border)">Time</th>
+              <th style="padding:7px 14px;text-align:left;font-size:9px;color:var(--muted);">Severity</th>
+              <th style="padding:7px 14px;text-align:left;font-size:9px;color:var(--muted);">Connection</th>
+              <th style="padding:7px 14px;text-align:left;font-size:9px;color:var(--muted);">Port</th>
+              <th style="padding:7px 14px;text-align:left;font-size:9px;color:var(--muted);">Score</th>
+              <th style="padding:7px 14px;text-align:left;font-size:9px;color:var(--muted);">Reason</th>
+            </tr>
+          </thead>
+          <tbody id="aBody"><tr><td colspan="6" class="loading">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Alert Feed -->
+    <div class="feed-card">
+      <div class="cc-hd">
+        <div class="cc-t"><div class="cc-dot" style="background:var(--red);animation:ldPulse 1.2s ease-in-out infinite"></div>Live Alerts</div>
+        <div class="pills">
+          <button class="pill active" onclick="setFeed('net',this)">Net</button>
+          <button class="pill" onclick="setFeed('cmd',this)">CMD</button>
+        </div>
+      </div>
+      <div class="feed-body" id="feedBody"><div class="loading">Awaiting events…</div></div>
+    </div>
+  </div>
+
+  <!-- BOTTOM -->
+  <div class="bot" style="grid-template-columns:1fr 280px 1fr;">
+    <!-- TABLE I: Model Performance Metrics -->
+    <div class="bot-card">
+      <div class="bc-hd"><div class="bc-t"><span>📊</span>Model Performance Metrics</div><div style="font-size:9px;color:var(--muted)">TABLE I</div></div>
+      <div class="bc-body" style="padding:6px 10px;">
+        <table style="width:100%;border-collapse:collapse;font-size:10px;font-family:'JetBrains Mono',monospace;">
+          <thead><tr>
+            <th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--cyan);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);font-family:'Inter',sans-serif">Model</th>
+            <th style="text-align:center;padding:6px 8px;font-size:9px;color:var(--cyan);border-bottom:1px solid var(--border);font-family:'Inter',sans-serif">Accuracy</th>
+            <th style="text-align:center;padding:6px 8px;font-size:9px;color:var(--cyan);border-bottom:1px solid var(--border);font-family:'Inter',sans-serif">Precision</th>
+            <th style="text-align:center;padding:6px 8px;font-size:9px;color:var(--cyan);border-bottom:1px solid var(--border);font-family:'Inter',sans-serif">Recall (TPR)</th>
+            <th style="text-align:center;padding:6px 8px;font-size:9px;color:var(--cyan);border-bottom:1px solid var(--border);font-family:'Inter',sans-serif">F1-Score</th>
+          </tr></thead>
+          <tbody>
+            <tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+              <td style="padding:6px 8px;color:#34D399;font-size:10px;font-family:'Inter',sans-serif;">🌳 Random Forest</td>
+              <td style="padding:6px 8px;text-align:center;color:var(--text)">78.4%</td>
+              <td style="padding:6px 8px;text-align:center;color:var(--text)">92.1%</td>
+              <td style="padding:6px 8px;text-align:center;color:var(--text)">79.9%</td>
+              <td style="padding:6px 8px;text-align:center;color:#34D399;font-weight:700">85.6%</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+              <td style="padding:6px 8px;color:#A78BFA;font-size:10px;font-family:'Inter',sans-serif;">🌲 Isolation Forest</td>
+              <td style="padding:6px 8px;text-align:center;color:var(--text)">73.3%</td>
+              <td style="padding:6px 8px;text-align:center;color:var(--text)">88.4%</td>
+              <td style="padding:6px 8px;text-align:center;color:var(--text)">65.4%</td>
+              <td style="padding:6px 8px;text-align:center;color:#A78BFA;font-weight:700">75.2%</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+              <td style="padding:6px 8px;color:#67E8F9;font-size:10px;font-family:'Inter',sans-serif;">🕸 Graph Neural Network</td>
+              <td style="padding:6px 8px;text-align:center;color:var(--text)">80.5%</td>
+              <td style="padding:6px 8px;text-align:center;color:var(--text)">87.3%</td>
+              <td style="padding:6px 8px;text-align:center;color:var(--text)">90.1%</td>
+              <td style="padding:6px 8px;text-align:center;color:#67E8F9;font-weight:700">88.7%</td>
+            </tr>
+            <tr style="background:rgba(14,165,233,.06);">
+              <td style="padding:6px 8px;color:#38BDF8;font-size:10px;font-weight:700;font-family:'Inter',sans-serif;">🤖 Ensemble Model</td>
+              <td style="padding:6px 8px;text-align:center;color:#38BDF8;font-weight:700">89.5%</td>
+              <td style="padding:6px 8px;text-align:center;color:#38BDF8;font-weight:700">94.7%</td>
+              <td style="padding:6px 8px;text-align:center;color:#38BDF8;font-weight:700">94.5%</td>
+              <td style="padding:6px 8px;text-align:center;color:#38BDF8;font-weight:700">94.6%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Threat Level -->
+    <div class="bot-card">
+      <div class="bc-hd"><div class="bc-t"><span>🎯</span>Threat Level</div></div>
+      <div class="bc-body">
+        <div class="dc-row" style="flex-direction:column;gap:6px;">
+          <div class="dc-item" id="dc-c"><div class="dc-ico">🔴</div><div class="dc-lbl" style="color:#FCA5A5">Critical</div><div class="dc-desc">Imminent</div></div>
+          <div class="dc-item" id="dc-h"><div class="dc-ico">🟠</div><div class="dc-lbl" style="color:#FCD34D">High</div><div class="dc-desc">Active</div></div>
+          <div class="dc-item" id="dc-m"><div class="dc-ico">🟡</div><div class="dc-lbl" style="color:#FDE68A">Medium</div><div class="dc-desc">Suspicious</div></div>
+          <div class="dc-item on-n" id="dc-n"><div class="dc-ico">🟢</div><div class="dc-lbl" style="color:#86EFAC">Normal</div><div class="dc-desc">Routine</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TABLE II: Attack Coverage and Type Analysis -->
+    <div class="bot-card">
+      <div class="bc-hd"><div class="bc-t"><span>🛡️</span>Attack Coverage &amp; Type Analysis</div><div style="font-size:9px;color:var(--muted)">TABLE II</div></div>
+      <div class="bc-body" style="padding:6px 10px;">
+        <table style="width:100%;border-collapse:collapse;font-size:10px;font-family:'JetBrains Mono',monospace;">
+          <thead><tr>
+            <th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--cyan);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);font-family:'Inter',sans-serif">Model</th>
+            <th style="text-align:center;padding:6px 8px;font-size:9px;color:var(--cyan);border-bottom:1px solid var(--border);font-family:'Inter',sans-serif">TPR (%)</th>
+            <th style="text-align:center;padding:6px 8px;font-size:9px;color:var(--cyan);border-bottom:1px solid var(--border);font-family:'Inter',sans-serif">FPR (%)</th>
+            <th style="text-align:left;padding:6px 8px;font-size:9px;color:var(--cyan);border-bottom:1px solid var(--border);font-family:'Inter',sans-serif">Targeted Threat Coverage</th>
+          </tr></thead>
+          <tbody>
+            <tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+              <td style="padding:6px 8px;color:#34D399;font-size:10px;font-family:'Inter',sans-serif;">🌳 Random Forest</td>
+              <td style="padding:6px 8px;text-align:center;color:#86EFAC;font-weight:600">95.6</td>
+              <td style="padding:6px 8px;text-align:center;color:#FCA5A5">2.6</td>
+              <td style="padding:6px 8px;color:var(--muted);font-size:9px;font-family:'Inter',sans-serif;">Known attack signatures</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+              <td style="padding:6px 8px;color:#A78BFA;font-size:10px;font-family:'Inter',sans-serif;">🌲 Isolation Forest</td>
+              <td style="padding:6px 8px;text-align:center;color:#86EFAC;font-weight:600">65.5</td>
+              <td style="padding:6px 8px;text-align:center;color:#FCA5A5">2.7</td>
+              <td style="padding:6px 8px;color:var(--muted);font-size:9px;font-family:'Inter',sans-serif;">Zero-day / Novel Anomaly</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+              <td style="padding:6px 8px;color:#67E8F9;font-size:10px;font-family:'Inter',sans-serif;">🕸 GNN</td>
+              <td style="padding:6px 8px;text-align:center;color:#86EFAC;font-weight:600">58.2</td>
+              <td style="padding:6px 8px;text-align:center;color:#FCA5A5">1.1</td>
+              <td style="padding:6px 8px;color:var(--muted);font-size:9px;font-family:'Inter',sans-serif;">Multi-stage / Structural patterns</td>
+            </tr>
+            <tr style="background:rgba(14,165,233,.06);">
+              <td style="padding:6px 8px;color:#38BDF8;font-size:10px;font-weight:700;font-family:'Inter',sans-serif;">🤖 Ensemble Model</td>
+              <td style="padding:6px 8px;text-align:center;color:#86EFAC;font-weight:700">97.2</td>
+              <td style="padding:6px 8px;text-align:center;color:#86EFAC;font-weight:700">1.2</td>
+              <td style="padding:6px 8px;color:#38BDF8;font-size:9px;font-weight:600;font-family:'Inter',sans-serif;">Comprehensive (All)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div><!-- /body -->
+
+<!-- STATUSBAR -->
+<div class="statusbar">
+  <div class="sb-item"><div class="sb-dot" style="background:var(--green)"></div>API STATUS</div>
+  <div class="sb-item"><div class="sb-dot" style="background:var(--blue)"></div><span id="sbIface">IFACE: —</span></div>
+  <div class="sb-item"><div class="sb-dot" style="background:var(--amber)"></div><span id="sbFlows">FLOWS: —</span></div>
+  <div class="sb-item"><span id="sbMode">MODE: —</span></div>
+  <div style="margin-left:auto" id="sbTime"></div>
+</div>
+</div><!-- /shell -->
+
+<script>
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+/* ─── MATRIX RAIN ─── */
+(function(){
+  const cv=document.getElementById('matrix');
+  const ctx=cv.getContext('2d');
+  let W,H,cols,drops;
+  const chars='01アイウエオカキクケコ'.split('');
+  function resize(){
+    W=cv.width=window.innerWidth;H=cv.height=window.innerHeight;
+    cols=Math.floor(W/16);drops=Array(cols).fill(1);
+  }
+  function draw(){
+    ctx.fillStyle='rgba(8,12,20,.05)';ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#0EA5E9';ctx.font='13px JetBrains Mono,monospace';
+    drops.forEach((y,i)=>{
+      ctx.fillText(chars[Math.floor(Math.random()*chars.length)],i*16,y*16);
+      if(y*16>H&&Math.random()>.975)drops[i]=0;
+      drops[i]++;
+    });
+  }
+  window.addEventListener('resize',resize);resize();
+  setInterval(draw,60);
+})();
+
+/* ─── SPARKLINE ─── */
+const sparkData={sp1:[],sp2:[],sp3:[],sp4:[]};
+function drawSpark(id,data,color){
+  const cv=document.getElementById(id);if(!cv)return;
+  const ctx=cv.getContext('2d');
+  const W=cv.offsetWidth;const H=cv.offsetHeight;
+  cv.width=W;cv.height=H;
+  if(data.length<2)return;
+  const mx=Math.max(...data)||1;
+  ctx.clearRect(0,0,W,H);
+  const grad=ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,color+'44');grad.addColorStop(1,'transparent');
+  ctx.beginPath();
+  data.forEach((v,i)=>{
+    const x=i/(data.length-1)*W;const y=H-(v/mx)*H*.85;
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  const last=ctx.getPath ? null : null;
+  ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.stroke();
+  ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.closePath();
+  ctx.fillStyle=grad;ctx.fill();
+}
+
+/* ─── DYNAMIC PULSE CHART ─── */
+const chartState = {
+  particles: [],
+  history: Array(100).fill(0).map(()=>({val:0,isThreat:false})),
+  tickPps: 0,
+  tickBytes: 0,
+  tickThreats: 0,
+  activeConns: new Set(),
+};
+let dynChartRaf = null;
+
+function initChart() {
+  const cv=document.getElementById('actChart');if(!cv)return;
+  const parent=cv.parentElement;
+  cv.width=parent.offsetWidth;cv.height=parent.offsetHeight;
+}
+
+function startDynamicChart() {
+  const cv=document.getElementById('actChart');if(!cv)return;
+  const ctx=cv.getContext('2d');
+  
+  function render() {
+    const W=cv.width; const H=cv.height;
+    ctx.clearRect(0,0,W,H);
+    
+    ctx.strokeStyle='rgba(14,165,233,.05)';ctx.lineWidth=1;
+    for(let i=0;i<=4;i++){const y=H/4*i;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+
+    let mx = 10;
+    chartState.history.forEach(h => { if(h.val > mx) mx = h.val; });
+
+    ctx.beginPath();
+    const len = chartState.history.length;
+    let hasThreatInView = false;
+    
+    for(let i=0; i<len; i++) {
+       const h = chartState.history[i];
+       const x = (i / (len-1)) * W;
+       let yVal = (h.val/mx)*H*0.8;
+       const y = H - Math.max(0, yVal) - 2;
+       
+       if(i===0) ctx.moveTo(x,y);
+       else ctx.lineTo(x,y);
+       if(h.isThreat) hasThreatInView = true;
+    }
+    
+    const lc = hasThreatInView ? '#EF4444' : '#0EA5E9';
+    ctx.strokeStyle = lc;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath();
+    const grad = ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0, hasThreatInView ? 'rgba(239,68,68,0.25)' : 'rgba(14,165,233,0.25)');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    for(let i=chartState.particles.length-1; i>=0; i--) {
+        const p = chartState.particles[i];
+        p.x -= 2.5; p.y += p.vy; p.alpha -= 0.015;
+        if(p.alpha <= 0 || p.x < 0) { chartState.particles.splice(i,1); continue; }
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+        ctx.fillStyle = p.color;
+        ctx.shadowBlur = 8; ctx.shadowColor = p.color;
+        ctx.fill(); ctx.shadowBlur = 0;
+    }
+
+    dynChartRaf = requestAnimationFrame(render);
+  }
+  
+  if(dynChartRaf) cancelAnimationFrame(dynChartRaf);
+  render();
+
+  setInterval(() => {
+     let v = chartState.tickPps;
+     if(ST.net === 'alerts' || ST.net === 'critical') v = chartState.tickThreats;
+     
+     chartState.history.shift();
+     chartState.history.push({ val: v, isThreat: chartState.tickThreats > 0 });
+
+     const ppsEl = document.getElementById('livePps');
+     if(ppsEl) ppsEl.textContent = chartState.tickPps.toLocaleString();
+     
+     let bw = chartState.tickBytes;
+     let bwStr = bw > 1048576 ? (bw/1048576).toFixed(1)+' MB/s' : bw > 1024 ? (bw/1024).toFixed(1)+' KB/s' : bw + ' B/s';
+     const bwEl = document.getElementById('liveBw');
+     if(bwEl) bwEl.textContent = bwStr;
+     
+     const connEl = document.getElementById('liveConn');
+     if(connEl) connEl.textContent = chartState.activeConns.size.toLocaleString();
+
+     chartState.tickPps = 0;
+     chartState.tickBytes = 0;
+     chartState.tickThreats = 0;
+     chartState.activeConns.clear();
+  }, 1000);
+}
+
+/* ─── STATE & API ─── */
+const API='/api';
+const ST={flows:[],alerts:[],cmds:[],net:'traffic',feed:'net',flowCount:0};
+
+function scC(v){if(v>=.8)return'#FCA5A5';if(v>=.5)return'#FCD34D';if(v>=.25)return'#86EFAC';return'#7DD3FC';}
+function sevB(s){
+  s=(s||'low').toLowerCase();
+  const m={critical:'b-c',high:'b-h',medium:'b-m',low:'b-l'};
+  return`<span class="bdg ${m[s]||'b-l'}">${s}</span>`;
+}
+function pct(v){return v!=null?(parseFloat(v)*100).toFixed(1)+'%':'—';}
+
+async function jx(u){try{return await(await fetch(u)).json();}catch{return null;}}
+
+function animN(id,t){
+  const el=document.getElementById(id);if(!el)return;
+  const cur=parseInt(el.textContent.replace(/\D/g,''))||0;
+  if(cur===t)return;
+  const s=Math.max(1,Math.ceil(Math.abs(t-cur)/15));let v=cur;
+  const tm=setInterval(()=>{
+    v+=(t>cur?s:-s);
+    if((t>cur&&v>=t)||(t<cur&&v<=t)){v=t;clearInterval(tm);}
+    el.textContent=v.toLocaleString();
+  },25);
+}
+
+function setDefcon(lv){
+  ['dc-c','dc-h','dc-m','dc-n'].forEach(id=>{
+    const e=document.getElementById(id);if(e){e.className='dc-item';}
+  });
+  const map={critical:'dc-c',high:'dc-h',medium:'dc-m',low:'dc-n'};
+  const cls={critical:'on-c',high:'on-h',medium:'on-m',low:'on-n'};
+  const el=document.getElementById(map[lv]||'dc-n');
+  if(el)el.classList.add(cls[lv]||'on-n');
+  const b=document.getElementById('tBadge');
+  const labels={critical:'REVIEW CRITICAL',high:'REVIEW ALERTS',medium:'REVIEW',low:'NO ACTIVE SIGNAL'};
+  const tw={critical:'tb-c',high:'tb-h',medium:'tb-h',low:'tb-n'};
+  if(b){b.textContent=labels[lv]||'NORMAL';b.className='threat-badge '+(tw[lv]||'tb-n');}
+}
+
+async function fetchHealth(){
+  const d=await jx(`${API}/health`);if(!d){document.getElementById('mlLbl').textContent='OFFLINE';return;}
+  const mode=((d.mode||'unknown')+' / '+(d.ml_mode||'unavailable')).toUpperCase();
+  document.getElementById('mlLbl').textContent=mode;
+  document.getElementById('sbIface').textContent='IFACE: '+(d.network_runtime?.iface||'—');
+  document.getElementById('sbFlows').textContent='FLOWS: '+(d.network_runtime?.udp_flows_received||0);
+  document.getElementById('sbMode').textContent='MODE: '+mode;
+}
+
+async function fetchStats(){
+  const d=await jx(`${API}/stats`);if(!d)return;
+  const t=d.total_alerts||0,c=d.critical_count||0,h=d.high_count||0,cmd=d.cmd_detections||0;
+  animN('v1',t);animN('v2',c);animN('v3',h);animN('v4',cmd);
+  // sparklines
+  const push=(arr,v)=>{arr.push(v);if(arr.length>30)arr.shift();};
+  push(sparkData.sp1,t);push(sparkData.sp2,c);push(sparkData.sp3,h);push(sparkData.sp4,cmd);
+  drawSpark('sp1',sparkData.sp1,'#38BDF8');
+  drawSpark('sp2',sparkData.sp2,'#FCA5A5');
+  drawSpark('sp3',sparkData.sp3,'#FCD34D');
+  drawSpark('sp4',sparkData.sp4,'#C4B5FD');
+  // chart data handled by interval
+  // defcon
+  if(c>0)setDefcon('critical');
+  else if(c>0||h>5)setDefcon('high');
+  else if(h>0)setDefcon('medium');
+  else setDefcon('low');
+}
+
+async function fetchModels(){
+  const d=await jx(`${API}/model-metrics`);if(!d||!d.models)return;
+  document.getElementById('mInfo').textContent='Live traffic is unlabeled';
+  const nm={isolation_forest:'🌲 ISO Forest',random_forest:'🌳 Rand Forest',gnn:'🕸 GNN'};
+  const cl={isolation_forest:'#A78BFA',random_forest:'#34D399',gnn:'#67E8F9'};
+  let mh='';
+  for(const[k,m]of Object.entries(d.models)){
+    const ok=m.status==='ready';const c=cl[k]||'#38BDF8';
+    const tpr=m.tpr==null?null:(parseFloat(m.tpr)*100).toFixed(0);
+    const fpr=m.fpr==null?null:(parseFloat(m.fpr)*100).toFixed(0);
+    mh+=`<div class="mm">
+      <div class="mm-name"><span class="bdg ${ok?'b-on':'b-off'}">${ok?'ON':'OFF'}</span>${nm[k]||k}</div>
+      <div class="mm-bars">
+        <div class="mm-bar-row"><span class="mm-bl">TPR</span><div class="mm-track"><div class="mm-fill" style="width:${tpr||0}%;background:${c}"></div></div><span class="mm-pct" style="color:${c}">${tpr==null?'—':tpr+'%'}</span></div>
+        <div class="mm-bar-row"><span class="mm-bl">FPR</span><div class="mm-track"><div class="mm-fill" style="width:${fpr||0}%;background:#EF4444"></div></div><span class="mm-pct" style="color:#FCA5A5">${fpr==null?'—':fpr+'%'}</span></div>
+      </div>
+    </div>`;
+  }
+  const mBodyEl=document.getElementById('mBody');if(mBodyEl)mBodyEl.innerHTML=mh||'<div class="loading">—</div>';
+  // metrics table
+  let rows='';
+  for(const[k,m]of Object.entries(d.models)){
+    const ok=m.status==='ready';const c=cl[k]||'#38BDF8';
+    rows+=`<tr style="border-bottom:1px solid rgba(255,255,255,.03)">
+      <td style="padding:4px 6px;font-size:10px;color:${c}">${nm[k]||k}</td>
+      <td style="padding:4px 6px"><span class="bdg ${ok?'b-on':'b-off'}">${ok?'ON':'OFF'}</span></td>
+      <td style="padding:4px 6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:${c}">${pct(m.tpr)}</td>
+      <td style="padding:4px 6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#FCA5A5">${pct(m.fpr)}</td>
+      <td style="padding:4px 6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:${c}">${pct(m.confidence)}</td>
+    </tr>`;
+  }
+  const mmBodyEl=document.getElementById('mmBody');if(mmBodyEl)mmBodyEl.innerHTML=rows||'<tr><td colspan="5" class="loading">—</td></tr>';
+}
+
+function formatTime(ts) {
+  const d = new Date((ts||0)*1000);
+  const ms = String(d.getMilliseconds()).padStart(3,'0');
+  const hr = d.getHours()%12||12;
+  const min = String(d.getMinutes()).padStart(2,'0');
+  const sec = String(d.getSeconds()).padStart(2,'0');
+  const ampm = d.getHours()>=12?'PM':'AM';
+  return `${hr}:${min}:${sec}.${ms} ${ampm}`;
+}
+
+function renderNet(){
+  const rows=ST.net==='traffic'?ST.flows:ST.net==='critical'?ST.alerts.filter(a=>a.severity==='critical'):ST.alerts;
+  const tb=document.getElementById('aBody');
+  if(!rows||!rows.length){tb.innerHTML='<tr><td colspan="6" class="loading">No data</td></tr>';return;}
+  tb.innerHTML=rows.slice(0,60).map(r=>{
+    const sc=parseFloat(r.score||0);
+    return`<tr>
+      <td style="padding:6px 14px;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);white-space:nowrap">${formatTime(r.timestamp)}</td>
+      <td style="padding:6px 14px">${sevB(r.severity)}</td>
+      <td style="padding:6px 14px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#7DD3FC">${esc(r.src_ip||'?')} → ${esc(r.dst_ip||'?')}</td>
+      <td style="padding:6px 14px;color:var(--muted);font-size:10px">${r.dst_port||'—'}</td>
+      <td style="padding:6px 14px;font-family:'JetBrains Mono',monospace;font-size:10px;color:${scC(sc)}">${(sc*100).toFixed(0)}%</td>
+      <td style="padding:6px 14px;color:var(--muted);font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.reason||'—')}</td>
+    </tr>`;
+  }).join('');
+}
+
+function setNet(m,btn){
+  ST.net=m;
+  document.querySelectorAll('#pNet,#pNet~*').forEach(b=>b.classList&&b.classList.remove&&b.classList.remove('active'));
+  document.querySelectorAll('.cc-hd .pill').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  renderNet();
+}
+
+function renderFeed(){
+  const items=ST.feed==='net'?ST.alerts.slice(0,20):ST.cmds.slice(0,20);
+  const el=document.getElementById('feedBody');
+  if(!items.length){el.innerHTML='<div class="loading">No incidents</div>';return;}
+  el.innerHTML=items.map((a,idx)=>{
+    const sc=parseFloat(a.score||a.confidence||0);const col=scC(sc);
+    const sC=a.severity==='critical'?'#EF4444':a.severity==='high'?'#F59E0B':sc>.5?'#6366F1':'#0EA5E9';
+    const isN=!!a.src_ip;
+    const title=isN?`${a.src_ip} → ${a.dst_ip}:${a.dst_port}`:(a.command||'').substring(0,48);
+    return`<div class="ar${idx===0?' ar-new':''}">
+      <div class="ar-sev" style="background:${sC}"></div>
+      <div class="ar-body">
+        <div class="ar-conn">${esc(title)}</div>
+        <div class="ar-reason">${sevB(a.severity)} &nbsp;${esc((a.reason||'—').substring(0,42))}</div>
+      </div>
+      <div class="ar-r">
+        <div class="ar-score" style="color:${col}">${(sc*100).toFixed(0)}%</div>
+        <div class="ar-time">${formatTime(a.timestamp)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setFeed(m,btn){
+  ST.feed=m;
+  document.querySelectorAll('.feed-card .pill').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  renderFeed();
+}
+
+async function fetchFlows(){const d=await jx(`${API}/network-flows?limit=100`);if(d&&d.flows){ST.flows=d.flows;if(ST.net==='traffic')renderNet();}}
+async function fetchAlerts(){const d=await jx(`${API}/alerts?limit=80`);if(d&&d.alerts){ST.alerts=d.alerts;if(ST.net!=='traffic')renderNet();if(ST.feed==='net')renderFeed();}}
+async function fetchCmds(){const d=await jx(`${API}/cmd-detections?limit=30`);if(d&&d.detections){ST.cmds=d.detections;if(ST.feed==='cmd')renderFeed();}}
+
+// Clock
+setInterval(()=>{
+  const t=new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const e=document.getElementById('clock');if(e)e.textContent=t;
+  const s=document.getElementById('sbTime');if(s)s.textContent=t+' LOCAL';
+},1000);
+
+// Flash
+function flash(){const f=document.getElementById('fl');f.classList.add('on');setTimeout(()=>f.classList.remove('on'),200);}
+
+async function update(){
+  try{
+    await Promise.all([fetchHealth(),fetchStats(),fetchModels(),fetchFlows(),fetchAlerts(),fetchCmds()]);
+  }catch(e){console.warn('update error:',e);}
+}
+
+window.addEventListener('load',async()=>{
+  initChart();
+  startDynamicChart();
+  window.addEventListener('resize',()=>{initChart();});
+  await update();
+  setInterval(update,5000);
+  try{
+    const io_=io(location.origin,{transports:['polling']});
+    let needsRender = false;
+    setInterval(() => {
+        if (needsRender && ST.net === 'traffic') {
+            renderNet();
+            needsRender = false;
+        }
+    }, 40);
+
+    io_.on('alert',a=>{
+      if(a.type==='cmd_detection'){ST.cmds.unshift(a);if(ST.cmds.length>50)ST.cmds.pop();if(ST.feed==='cmd')renderFeed();}
+      else if(a.src_ip||a.dst_ip){
+        ST.alerts.unshift(a);if(ST.alerts.length>150)ST.alerts.pop();
+        if(ST.net!=='traffic')renderNet();if(ST.feed==='net')renderFeed();
+        if(a.is_anomaly||a.severity==='critical'||a.severity==='high')flash();
+      }
+      fetchStats();
+    });
+    io_.on('network_flow',f=>{
+      ST.flows.unshift(f);if(ST.flows.length>200)ST.flows.pop();
+      needsRender = true;
+      ST.flowCount++;
+      
+      // Update dynamic chart state
+      const pkts = f.pkt_count || 1;
+      const bytes = f.byte_count || 64;
+      const isSus = f.is_anomaly || f.severity === 'high' || f.severity === 'critical';
+      
+      chartState.tickPps += pkts;
+      chartState.tickBytes += bytes;
+      if(isSus) chartState.tickThreats += pkts;
+      if(f.src_ip && f.dst_ip) chartState.activeConns.add(f.src_ip+'-'+f.dst_ip);
+      
+      // Spawn particle for active flow visualization
+      if(ST.net === 'traffic' || (ST.net === 'alerts' && isSus) || (ST.net === 'critical' && f.severity === 'critical')) {
+          if(Math.random() < 0.25) {
+              const cv = document.getElementById('actChart');
+              if(cv) {
+                  chartState.particles.push({
+                      x: cv.width,
+                      y: Math.random() * (cv.height * 0.9),
+                      vy: (Math.random()-0.5)*1.5,
+                      size: isSus ? 2.5 : 1.5,
+                      color: isSus ? '#EF4444' : '#0EA5E9',
+                      alpha: 1
+                  });
+              }
+          }
+      }
+    });
+  }catch(e){console.warn(e);}
+});
+</script>
+</body>
+</html>
+

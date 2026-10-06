@@ -1,6 +1,29 @@
-# Data artifacts
-/data/
-
-# Virtual environments
-venv/
+# Python virtual environment
 .venv/
+
+# Cache files
+__pycache__/
+
+# VS Code
+.vscode/
+
+# Environment variables
+.env
+*.env
+
+# Large files
+alerts.db
+alerts.db-journal
+
+# Local datasets, snapshots, runtime state and generated model artifacts
+data/
+artifacts/
+models/
+training_data/
+*.db-wal
+*.db-shm
+.venv*/
+*.pcap
+*.pcapng
+*.part
+*.log

@@ -1,113 +1,107 @@
-# Hybrid AI-IDS: Intrusion Detection System
+# IDS/SOC: reproducible monitoring and evaluation
 
-This project is a comprehensive, AI-powered Intrusion Detection System (IDS) that leverages a novel hybrid approach by analyzing both **network logs** and **system logs** to detect a wide range of cyber attacks.
+A Windows-first local intrusion-monitoring application with packet replay, bounded bidirectional flow extraction, command rules, SQLite incident storage, and a browser dashboard. The default is **replay mode**. Live machine-learning detection is gated on a compatible, independently evaluated model.
 
-## Features
+## Current status
 
-- **Hybrid Detection**: Correlates network traffic with system-level events for higher accuracy.
-- **Machine Learning Core**: Utilizes a suite of models (Random Forest, LSTM, GNN) for robust detection.
-- **Real-time Monitoring**: Includes components to sniff live network traffic and monitor system logs.
-- **REST API**: A Flask-based API to serve the trained model for real-time predictions.
-- **Containerized**: Dockerfile for easy deployment and scalability.
-- **Dashboard**: A Streamlit-based dashboard for visualizing live alerts.
+- Modular Flask + Socket.IO application served on loopback by Waitress.
+- Labels, incoming scores, and severity cannot override inference. No mock models or random score changes in the runtime.
+- IPv4/IPv6 flow windows, scan rules, authenticated ingestion, incident review, independent analyst labels, database backup, and retention.
+- Separate trained CICIDS2017 and UNSW-NB15 CSV benchmark artifacts and held-out reports.
+- Resumable PCAP/label downloads with checksums, canonical extraction, label alignment, and candidate training tools.
+- **Not yet qualified for production:** canonical model training awaits complete PCAP acquisition; live collectors require Windows setup; the 72-hour soak and shadow pilot remain outstanding.
 
-## System Architecture
+See [implementation status](docs/IMPLEMENTATION_STATUS.md), [full rework plan](docs/REWORK_PLAN.md), and [runbook](docs/RUNBOOK.md). Historical project papers describe the older prototype; they are not current validation evidence.
 
-The system is designed in a modular way:
-1.  **Data Preprocessing**: Scripts to parse, clean, synchronize, and engineer features from raw logs.
-2.  **Model Training**: Pipelines to train and evaluate multiple AI models.
-3.  **Real-time Deployment**: A containerized API that serves the best model.
-4.  **Live Monitoring**: Scripts that capture live data and send it to the API.
-5.  **Visualization**: A dashboard to display the results.
+## Setup
 
-## Project Structure
+The current environment is verified on Windows with Python 3.14.7. Install a compatible Python interpreter, then from the repository root:
 
-```
-ids-system/
-├── data/                # Raw and processed datasets
-├── docs/                # Project documentation (plan.md)
-├── models/              # Saved model artifacts
-├── notebooks/           # Jupyter notebooks for exploration
-├── scripts/             # Helper scripts (e.g., download_datasets.py)
-├── src/                 # Main source code
-│   ├── api/             # Flask API for model serving
-│   ├── models/          # Model implementations
-│   ├── monitors/        # Real-time data collectors
-│   ├── preprocessors/   # Data processing modules
-│   ├── __init__.py
-│   ├── comparative_analysis.py
-│   ├── dashboard.py
-│   ├── evaluate_models.py
-│   ├── main_preprocessor.py
-│   ├── optimize_model.py
-│   └── train_models.py
-├── Dockerfile           # For containerization
-└── requirements.txt     # Project dependencies
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt
+.\scripts\start.ps1
 ```
 
-## Setup and Installation
+Open [Dashboard](http://127.0.0.1:5000) or [Operations](http://127.0.0.1:5000/operations). The server binds only to 127.0.0.1. It creates `data/soc.db` and a local write token in `data/local-token.txt`. Keep that token private; enter it in Operations to review incidents and labels. Set `IDS_TOKEN` to override it.
 
-1.  **Clone the repository**:
-    ```bash
-    git clone <repository-url>
-    cd ids-system
-    ```
+The original `alerts.db`, model files and training CSVs are preserved as legacy material and are not loaded into the new runtime. A source/database checkpoint is under `artifacts/checkpoints/`.
 
-2.  **Install dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
+## Reproducible demo
 
-3.  **Download Datasets**:
-    -   Download the CICIDS-2017 dataset and place the CSVs in `data/cicids-2017/MachineLearningCVE/`.
-    -   Run the script to download other datasets if needed:
-        ```bash
-        python scripts/download_datasets.py
-        ```
+With the server in replay mode:
 
-## Usage Guide
-
-### 1. Data Preprocessing
-Run the main preprocessing pipeline to prepare the data for training.
-```bash
-python src/main_preprocessor.py
+```powershell
+.\.venv\Scripts\python.exe -m scripts.demo
 ```
 
-### 2. Model Training
-Train the AI models on the processed data.
-```bash
-python src/train_models.py
+This writes an explicitly synthetic PCAP locally and processes it through the real extraction and ingestion path. It does not send scan packets onto the network. The fixture generates 25 flow windows and one grouped scan incident. Repeating the same fixture is idempotent. It verifies plumbing and rules, not learned attack-detection accuracy.
+
+## Real datasets
+
+CSV benchmark commands:
+
+```powershell
+.\.venv\Scripts\python.exe -m training.benchmark --dataset cicids2017 --input 'C:\path\to\CIC-CSV' --max-per-file 60000
+.\.venv\Scripts\python.exe -m training.benchmark --dataset unsw-nb15 --input 'C:\path\to\UNSW-CSV' --max-per-file 0
 ```
 
-### 3. Model Evaluation
-Evaluate the performance of the trained models.
-```bash
-python src/evaluate_models.py
+Reports, complete split manifests, predictions and model checksums are written to `artifacts/benchmarks/<run>/`. CIC sampling is uniform per capture, before labels are used. CIC partitions are Monday-Wednesday training, Thursday validation, Friday test. UNSW uses the supplied filename partitions with fingerprint-group validation. Neither benchmark proves full session independence where source identifiers are missing. Models are explicitly offline-only and rejected by the live loader.
+
+Download missing CIC PCAPs and matching labels:
+
+```powershell
+.\.venv\Scripts\python.exe -m training.download
 ```
 
-### 4. Run the API
-Start the Flask API to serve the best model.
-```bash
-python src/api/app.py
+The public mirror revision and checksums are recorded in `data/raw/cicids2017/download-manifest.json`. The downloader needs about 53 GB plus working space. It resumes `.part` files. Do not launch a second downloader while one is active. Operations displays progress. The UNSW publisher's PCAP link currently redirects to authentication; its existing CSV benchmark remains usable.
+
+After downloads finish, or while the downloader is active in another process:
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.complete_pipeline
 ```
 
-### 5. Start Real-time Monitoring
-In separate terminals, run the monitoring scripts.
-```bash
-# Terminal 1: Network Sniffer
-python src/monitors/network_sniffer.py
+This waits for verified captures, extracts the same flow-window schema used live, joins independent labels, checks overlap/alignment, and trains a **candidate**. Progress is in `artifacts/pipeline-status.json`. The current labels have minute-level timing; the join explicitly allows that uncertainty, rejects conflicting labels, and reports match coverage. Failure gates stop training when alignment is poor or extraction drops flows.
 
-# Terminal 2: System Monitor
-python src/monitors/system_monitor.py
+Candidate artifacts remain unapproved until the release gates and shadow pilot are reviewed. Existing labels and predictions never automatically retrain the active detector.
+
+## Live collection
+
+Install Npcap using the signed installer under `data/installers/` (or the official Npcap site). Install/configure Sysmon from Microsoft's official package for process events. These are system-level Windows setup steps; downloading the files does not install them. See the runbook.
+
+```powershell
+.\scripts\start.ps1 -Mode live -Interface '<Scapy interface name>' -Database 'C:\path\to\live.db'
 ```
 
-### 6. View the Dashboard
-Launch the Streamlit dashboard to see live alerts.
-```bash
-streamlit run src/dashboard.py
+A network sensor sees traffic available at its interface. A workstation cannot monitor an entire switched network without appropriate observation placement. Capture failures are visible in Operations. GNN and legacy command AI remain disabled. Loopback dashboard traffic on TCP port 5000 is excluded from capture.
+
+## Validation
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m scripts.qualify
+# Optional browser check, using installed Chrome and requirements-dev.txt:
+.\.venv\Scripts\python.exe -m scripts.browser_check
 ```
 
-## Future Work
+The tests cover bidirectional/IPv6 extraction, disjoint windows, malformed data, label isolation, deterministic rules, API access, deduplication, incident review, backup/restore, model compatibility, timestamp precision and split isolation. The bounded qualification is not the 72-hour soak.
 
-- **Phase 3: Attack Simulation**: The project can be extended by building a dedicated simulation environment to generate custom, synchronized network and system log data for the specified attack scenarios. This would further enhance the model's accuracy and real-world applicability.
-- **Advanced Models**: Fully implement and tune the LSTM and GNN models for potentially higher accuracy on complex and sequential attacks.
+## Data and model boundaries
+
+- `backend/`: runtime, common feature contract, deterministic detection, API, persistence, optional endpoint collector.
+- `training/`: acquisition, source-specific CSV benchmarks, PCAP extraction/labels, canonical model training.
+- `scripts/`: startup, demo, maintenance, qualification, continuation.
+- `frontend/`: existing dashboard plus Operations.
+- `tests/`: regression and data-integrity tests.
+- `data/`, `artifacts/`, `models/`: local generated content excluded from Git.
+
+Older training helpers and UDP senders are historical reference code. Use the commands above for current workflows. No network or endpoint event alone confirms every attack family: evidence and human review remain necessary.
+
+## Sources
+
+- [CICIDS2017 publisher](https://www.unb.ca/cic/datasets/ids-2017.html)
+- [CIC public mirror used for acquisition](https://huggingface.co/datasets/bvsam/cic-ids-2017)
+- [UNSW-NB15 publisher](https://research.unsw.edu.au/projects/unsw-nb15-dataset)
+- [Npcap](https://npcap.com/)
+- [Microsoft Sysmon](https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon)

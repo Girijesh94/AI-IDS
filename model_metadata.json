@@ -1,0 +1,17 @@
+{
+  "trained_at": "2026-01-31T18:32:22.163723",
+  "features": [
+    "duration",
+    "pkt_count",
+    "byte_count",
+    "src2dst_pkts",
+    "dst2src_pkts",
+    "mean_pkt_size",
+    "tcp_syn",
+    "tcp_rst"
+  ],
+  "n_features": 8,
+  "n_estimators": 100,
+  "contamination": 0.1,
+  "model_type": "IsolationForest"
+}
