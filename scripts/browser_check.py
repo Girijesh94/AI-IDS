@@ -14,10 +14,12 @@ def main():
             response=page.goto('http://127.0.0.1:5000'+route,wait_until='load')
             assert response.status==200,route
             if route=='/operations':
+                page.get_by_role('link',name='Model & data',exact=True).last.click()
                 page.get_by_role('heading',name='Offline evaluations').wait_for()
                 page.get_by_text('cicids2017 — logistic_regression',exact=True).wait_for()
                 assert page.get_by_text('cicids2017 — logistic_regression',exact=True).count()==1
                 assert page.get_by_text('unsw-nb15 — random_forest',exact=True).count()==1
+                page.get_by_role('link',name='Overview',exact=True).click()
                 page.screenshot(path='artifacts/operations-desktop.png',full_page=True)
                 page.set_viewport_size({'width':390,'height':844})
                 page.screenshot(path='artifacts/operations-mobile.png',full_page=True)

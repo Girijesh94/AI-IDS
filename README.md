@@ -20,6 +20,8 @@ python -m venv .venv
 
 Open [Operations](http://127.0.0.1:5000/operations). No PCAP download is needed to load the bundled candidate. The server binds to localhost. `data/local-token.txt` contains the write token; enter it in Operations to review incidents and label events. The token is never embedded in the page.
 
+The browser interface includes an interactive 3D sensor, X-ray inspection, liquid metal emblem, ripple background and pointer effects. It adapts to mobile screens and reduced motion. The built frontend is included; rebuilding it requires Node. See [frontend implementation and build instructions](docs/FRONTEND.md).
+
 For live collection after installing [Npcap](https://npcap.com/):
 
 ```powershell

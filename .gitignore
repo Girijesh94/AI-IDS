@@ -27,3 +27,4 @@ training_data/
 *.pcapng
 *.part
 *.log
+node_modules/
